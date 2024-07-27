@@ -14,7 +14,7 @@ import cv2
 
 from enum import Enum
 
-from models.spatracker.datasets.utils import CoTrackerData, resize_sample
+from third_party.spatial_tracker.models.spatracker.datasets.utils import CoTrackerData, resize_sample
 
 IGNORE_ANIMALS = [
     # "bear.json",

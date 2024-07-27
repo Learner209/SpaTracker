@@ -10,11 +10,13 @@ import torch.nn.functional as F
 
 from typing import Optional, Tuple, Type
 
-from models.spatracker.models.core.spatracker.vit.common import (
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.vit.common import (
     LayerNorm2d, MLPBlock
 )
 
 # This class and its supporting functions below lightly adapted from the ViTDet backbone available at: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/backbone/vit.py # noqa
+
+
 class ImageEncoderViT(nn.Module):
     def __init__(
         self,
@@ -108,7 +110,7 @@ class ImageEncoderViT(nn.Module):
 
         x = self.patch_embed(x)
         if self.pos_embed is not None:
-            x = x + self.pos_embed 
+            x = x + self.pos_embed
 
         for blk in self.blocks:
             x = blk(x)

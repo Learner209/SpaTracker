@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.spatracker.models.core.spatracker.dpt.base_model import BaseModel
-from models.spatracker.models.core.spatracker.dpt.blocks import (
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.dpt.base_model import BaseModel
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.dpt.blocks import (
     FeatureFusionBlock,
     FeatureFusionBlock_custom,
     Interpolate,
@@ -65,26 +65,25 @@ class DPT(BaseModel):
         self.scratch.refinenet4 = _make_fusion_block(features, use_bn)
 
         self.scratch.output_conv = head
-        
-        self.proj_out = nn.Sequential( 
-                        nn.Conv2d(
-                                256+512+384+384,
-                                256,
-                                kernel_size=3,
-                                padding=1,
-                                padding_mode="zeros",
-                            ),
-                        nn.BatchNorm2d(128 * 2),
-                        nn.ReLU(True),
-                        nn.Conv2d(
-                                128 * 2,
-                                128,
-                                kernel_size=3,
-                                padding=1,
-                                padding_mode="zeros",
-                            )
-                        )
-        
+
+        self.proj_out = nn.Sequential(
+            nn.Conv2d(
+                256 + 512 + 384 + 384,
+                256,
+                kernel_size=3,
+                padding=1,
+                padding_mode="zeros",
+            ),
+            nn.BatchNorm2d(128 * 2),
+            nn.ReLU(True),
+            nn.Conv2d(
+                128 * 2,
+                128,
+                kernel_size=3,
+                padding=1,
+                padding_mode="zeros",
+            )
+        )
 
     def forward(self, x, only_enc=False):
         if self.channels_last == True:
@@ -94,26 +93,26 @@ class DPT(BaseModel):
             a = (layer_1)
             b = (
                 F.interpolate(
-                layer_2,
-                scale_factor=2,
-                mode="bilinear",
-                align_corners=True,
+                    layer_2,
+                    scale_factor=2,
+                    mode="bilinear",
+                    align_corners=True,
                 )
             )
             c = (
                 F.interpolate(
-                layer_3,
-                scale_factor=8,
-                mode="bilinear",
-                align_corners=True,
+                    layer_3,
+                    scale_factor=8,
+                    mode="bilinear",
+                    align_corners=True,
                 )
             )
             d = (
                 F.interpolate(
-                layer_4,
-                scale_factor=16,
-                mode="bilinear",
-                align_corners=True,
+                    layer_4,
+                    scale_factor=16,
+                    mode="bilinear",
+                    align_corners=True,
                 )
             )
             x = self.proj_out(torch.cat([a, b, c, d], dim=1))
@@ -131,12 +130,12 @@ class DPT(BaseModel):
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
 
-        _,_,H_out,W_out = path_1.size()
-        path_2_up = F.interpolate(path_2, size=(H_out,W_out), mode="bilinear", align_corners=True)
-        path_3_up = F.interpolate(path_3, size=(H_out,W_out), mode="bilinear", align_corners=True)
-        path_4_up = F.interpolate(path_4, size=(H_out,W_out), mode="bilinear", align_corners=True)
+        _, _, H_out, W_out = path_1.size()
+        path_2_up = F.interpolate(path_2, size=(H_out, W_out), mode="bilinear", align_corners=True)
+        path_3_up = F.interpolate(path_3, size=(H_out, W_out), mode="bilinear", align_corners=True)
+        path_4_up = F.interpolate(path_4, size=(H_out, W_out), mode="bilinear", align_corners=True)
 
-        out = self.scratch.output_conv(path_1+path_2_up+path_3_up+path_4_up)
+        out = self.scratch.output_conv(path_1 + path_2_up + path_3_up + path_4_up)
 
         return out
 
@@ -176,6 +175,7 @@ class DPTDepthModel(DPT):
             return depth
         else:
             return inv_depth
+
 
 class DPTEncoder(DPT):
     def __init__(

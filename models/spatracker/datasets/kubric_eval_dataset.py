@@ -16,7 +16,7 @@ import imageio
 from PIL import Image
 from typing import Mapping, Tuple, Union
 
-from models.spatracker.datasets.utils import CoTrackerData
+from third_party.spatial_tracker.models.spatracker.datasets.utils import CoTrackerData
 
 DatasetElement = Mapping[str, Mapping[str, Union[np.ndarray, str]]]
 
@@ -160,7 +160,7 @@ class KubricEvalDataset(torch.utils.data.Dataset):
         frames = []
         for i, img_path in enumerate(img_paths):
             frames.append(imageio.v2.imread(os.path.join(rgb_path, img_path)))
-        frames = np.stack(frames) # T, H, W, 3
+        frames = np.stack(frames)  # T, H, W, 3
         dp_paths = sorted(os.listdir(depth_path))
         depths = []
         for i, dp_path in enumerate(dp_paths):
@@ -182,7 +182,7 @@ class KubricEvalDataset(torch.utils.data.Dataset):
         assert converted["target_points"].shape[1] == converted["query_points"].shape[1]
 
         trajs = (
-            torch.from_numpy(converted["target_points"])[0].permute(1, 0, 2).float() # N, T, D
+            torch.from_numpy(converted["target_points"])[0].permute(1, 0, 2).float()  # N, T, D
         )  # T, N, D
 
         rgbs = torch.from_numpy(frames).permute(0, 3, 1, 2).float()

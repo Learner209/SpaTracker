@@ -10,11 +10,10 @@ import torch
 import imageio
 import numpy as np
 
-from models.spatracker.datasets.utils import CoTrackerData, aug_depth
+from third_party.spatial_tracker.models.spatracker.datasets.utils import CoTrackerData, aug_depth
 from torchvision.transforms import ColorJitter, GaussianBlur
 from PIL import Image
 import cv2
-
 
 
 class CoTrackerDataset(torch.utils.data.Dataset):
@@ -172,7 +171,7 @@ class CoTrackerDataset(torch.utils.data.Dataset):
                         y00 = np.random.randint(0, H - hei)
                         x00 = np.random.randint(0, W - wid)
                         fr = np.random.randint(0, S)
-                        rep = rgbs_alt[fr][y00 : y00 + hei, x00 : x00 + wid, :]
+                        rep = rgbs_alt[fr][y00: y00 + hei, x00: x00 + wid, :]
                         rgbs[i][y0:y1, x0:x1, :] = rep
 
                         occ_inds = np.logical_and(
@@ -233,7 +232,6 @@ class CoTrackerDataset(torch.utils.data.Dataset):
         if intrs is not None:
             intrs[:, 0, 2] += pad_x0
             intrs[:, 1, 2] += pad_y0
-
 
         H, W = rgbs[0].shape[:2]
 
@@ -306,7 +304,6 @@ class CoTrackerDataset(torch.utils.data.Dataset):
         if depths is not None:
             depths = depths_scaled
 
-
         ok_inds = visibles[0, :] > 0
         vis_trajs = trajs[:, ok_inds]  # S,?,2
 
@@ -357,18 +354,17 @@ class CoTrackerDataset(torch.utils.data.Dataset):
             else:
                 x0 = min(max(0, x0), W_new - self.crop_size[1] - 1)
 
-            rgbs[s] = rgbs[s][y0 : y0 + self.crop_size[0], x0 : x0 + self.crop_size[1]]
+            rgbs[s] = rgbs[s][y0: y0 + self.crop_size[0], x0: x0 + self.crop_size[1]]
             if depths is not None:
-                depths[s] = depths[s][y0 : y0 + self.crop_size[0], 
-                                                x0 : x0 + self.crop_size[1]]
+                depths[s] = depths[s][y0: y0 + self.crop_size[0],
+                                      x0: x0 + self.crop_size[1]]
             trajs[s, :, 0] -= x0
             trajs[s, :, 1] -= y0
-            
+
             # transform intrinsic
             if intrs is not None:
                 intrs[s, 0, 2] -= x0
                 intrs[s, 1, 2] -= y0
-
 
         H_new = self.crop_size[0]
         W_new = self.crop_size[1]
@@ -422,12 +418,12 @@ class CoTrackerDataset(torch.utils.data.Dataset):
             else np.random.randint(0, W_new - self.crop_size[1])
         )
         rgbs = [
-            rgb[y0 : y0 + self.crop_size[0], x0 : x0 + self.crop_size[1]]
+            rgb[y0: y0 + self.crop_size[0], x0: x0 + self.crop_size[1]]
             for rgb in rgbs
         ]
         if depths is not None:
             depths = [
-                depth[y0 : y0 + self.crop_size[0], x0 : x0 + self.crop_size[1]]
+                depth[y0: y0 + self.crop_size[0], x0: x0 + self.crop_size[1]]
                 for depth in depths
             ]
 
@@ -460,9 +456,9 @@ class KubricMovifDataset(CoTrackerDataset):
             sample_vis_1st_frame=sample_vis_1st_frame,
             use_augs=use_augs,
         )
-        self.intr = np.array([[560, 0 , 256], 
-                              [0  ,560, 256],
-                              [0,  0,   1]])
+        self.intr = np.array([[560, 0, 256],
+                              [0, 560, 256],
+                              [0, 0, 1]])
         self.pad_bounds = [0, 25]
         self.resize_lim = [0.75, 1.25]  # sample resizes from here
         self.resize_delta = 0.05
@@ -478,11 +474,11 @@ class KubricMovifDataset(CoTrackerDataset):
                 if os.path.isdir(os.path.join(self.dataRootFrames, fname))
             ]
         self.use_wind_augs = use_wind_augs
-        self.use_video_flip = use_video_flip 
+        self.use_video_flip = use_video_flip
         print("found %d unique videos in %s" % (len(self.seq_names), self.dataRootFrames))
 
     def getitem_helper(self, index):
-        
+
         # aug the sampling from 60 to 356
         if self.use_wind_augs == True:
             self.traj_per_sample = torch.randint(64, 356, (1,)).item()
@@ -496,7 +492,7 @@ class KubricMovifDataset(CoTrackerDataset):
 
         img_paths = sorted(os.listdir(rgb_path))
         if self.use_video_flip:
-            #NOTE: flip the video
+            # NOTE: flip the video
             img_paths_inv = img_paths[::-1]
             img_paths = img_paths + img_paths_inv
         # loading the rgb frames
@@ -512,7 +508,7 @@ class KubricMovifDataset(CoTrackerDataset):
         # loading the depth frames
         dp_paths = sorted(os.listdir(depth_path))
         if self.use_video_flip:
-            #NOTE: flip the video
+            # NOTE: flip the video
             dp_paths_inv = dp_paths[::-1]
             dp_paths = dp_paths + dp_paths_inv
         depths = []
@@ -536,12 +532,12 @@ class KubricMovifDataset(CoTrackerDataset):
         assert self.seq_len <= len(rgbs)
         if self.seq_len < len(rgbs):
             start_ind = np.random.choice(len(rgbs) - self.seq_len, 1)[0]
-            rgbs = rgbs[start_ind : start_ind + self.seq_len]
-            intrs = intrs[start_ind : start_ind + self.seq_len]
-            depths = depths[start_ind : start_ind + self.seq_len]
-            traj_2d = traj_2d[:, start_ind : start_ind + self.seq_len]
-            traj_3d = traj_3d[:, start_ind : start_ind + self.seq_len]
-            visibility = visibility[:, start_ind : start_ind + self.seq_len]
+            rgbs = rgbs[start_ind: start_ind + self.seq_len]
+            intrs = intrs[start_ind: start_ind + self.seq_len]
+            depths = depths[start_ind: start_ind + self.seq_len]
+            traj_2d = traj_2d[:, start_ind: start_ind + self.seq_len]
+            traj_3d = traj_3d[:, start_ind: start_ind + self.seq_len]
+            visibility = visibility[:, start_ind: start_ind + self.seq_len]
 
         traj_2d = np.transpose(traj_2d, (1, 0, 2))
         traj_3d = np.transpose(traj_3d, (1, 0, 2))
@@ -555,14 +551,13 @@ class KubricMovifDataset(CoTrackerDataset):
             rgbs, traj_2d, visibility = self.add_photometric_augs(
                 rgbs, traj_2d, visibility
             )
-            rgbs,  traj_2d, depths, intrs = self.add_spatial_augs(rgbs, 
-                                            traj_2d, visibility, 
-                                            depths=depths, intrs=intrs)
+            rgbs, traj_2d, depths, intrs = self.add_spatial_augs(rgbs,
+                                                                 traj_2d, visibility,
+                                                                 depths=depths, intrs=intrs)
             # depths, _ = self.add_spatial_augs(depths, traj_2d, visibility)
         else:
             rgbs, traj_2d, depths = self.crop(rgbs, traj_2d, depths)
-            depths = [depth[...,0] for depth in depths]
-
+            depths = [depth[..., 0] for depth in depths]
 
         visibility[traj_2d[:, :, 0] > self.crop_size[1] - 1] = False
         visibility[traj_2d[:, :, 0] < 0] = False
@@ -584,7 +579,7 @@ class KubricMovifDataset(CoTrackerDataset):
                 (visibile_pts_first_frame_inds, visibile_pts_mid_frame_inds), dim=0
             )
         point_inds = torch.randperm(len(visibile_pts_inds))[: self.traj_per_sample]
-        
+
         if len(point_inds) < self.traj_per_sample:
             gotit = False
 
@@ -595,17 +590,17 @@ class KubricMovifDataset(CoTrackerDataset):
         valids = torch.ones((self.seq_len, self.traj_per_sample))
 
         rgbs = torch.from_numpy(np.stack(rgbs)).permute(0, 3, 1, 2).float()
-        depths = torch.from_numpy(np.stack(depths)[...,None]/1000.0).permute(0, 
-                                                                3, 1, 2).float()
+        depths = torch.from_numpy(np.stack(depths)[..., None] / 1000.0).permute(0,
+                                                                                3, 1, 2).float()
         intrs = torch.from_numpy(np.stack(intrs)).float()
         # add the scale augmentation for depth maps
         depths = aug_depth(depths,
-                grid=(8, 8),
-                scale=(0.85, 1.15),
-                shift=(-0.05, 0.05),
-                gn_kernel=(7, 7),
-                gn_sigma=(2, 2),
-                    )
+                           grid=(8, 8),
+                           scale=(0.85, 1.15),
+                           shift=(-0.05, 0.05),
+                           gn_kernel=(7, 7),
+                           gn_sigma=(2, 2),
+                           )
 
         segs = torch.ones((self.seq_len, 1, self.crop_size[0], self.crop_size[1]))
         sample = CoTrackerData(

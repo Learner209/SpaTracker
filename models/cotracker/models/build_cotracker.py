@@ -6,7 +6,7 @@
 
 import torch
 
-from models.cotracker.models.core.cotracker.cotracker import CoTracker
+from third_party.spatial_tracker.models.cotracker.models.core.cotracker.cotracker import CoTracker
 
 
 def build_cotracker(

@@ -14,12 +14,14 @@ from functools import partial
 from itertools import repeat
 import torchvision.models as tvm
 
-from models.spatracker.models.core.spatracker.vit.encoder import ImageEncoderViT as vitEnc
-from models.spatracker.models.core.spatracker.dpt.models import DPTEncoder
-from models.spatracker.models.core.spatracker.loftr import LocalFeatureTransformer
-from models.monoD.depth_anything.dpt import DPTHeadEnc, DPTHead
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.vit.encoder import ImageEncoderViT as vitEnc
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.dpt.models import DPTEncoder
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.loftr import LocalFeatureTransformer
+from third_party.spatial_tracker.models.monoD.depth_anything.dpt import DPTHeadEnc, DPTHead
 
 # From PyTorch internals
+
+
 def _ntuple(n):
     def parse(x):
         if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
@@ -75,10 +77,11 @@ class Mlp(nn.Module):
         x = self.fc2(x)
         x = self.drop2(x)
         return x
-    
+
+
 class Attention(nn.Module):
     def __init__(self, query_dim, context_dim=None,
-                  num_heads=8, dim_head=48, qkv_bias=False, flash=False):
+                 num_heads=8, dim_head=48, qkv_bias=False, flash=False):
         super().__init__()
         inner_dim = self.inner_dim = dim_head * num_heads
         context_dim = default(context_dim, query_dim)
@@ -86,7 +89,7 @@ class Attention(nn.Module):
         self.heads = num_heads
         self.flash = flash
 
-        self.qkv = nn.Linear(query_dim, inner_dim*3, bias=qkv_bias)
+        self.qkv = nn.Linear(query_dim, inner_dim * 3, bias=qkv_bias)
         self.proj = nn.Linear(inner_dim, query_dim)
 
     def forward(self, x, context=None, attn_bias=None):
@@ -98,13 +101,13 @@ class Attention(nn.Module):
         # context = default(context, x)
 
         qkv = self.qkv(x).reshape(B, N1, 3, h, C // h)
-        q, k, v = qkv[:,:, 0], qkv[:,:, 1], qkv[:,:, 2]
+        q, k, v = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]
         N2 = x.shape[1]
 
         k = k.reshape(B, N2, h, C // h).permute(0, 2, 1, 3)
         v = v.reshape(B, N2, h, C // h).permute(0, 2, 1, 3)
         q = q.reshape(B, N1, h, C // h).permute(0, 2, 1, 3)
-        if self.flash==False:
+        if self.flash == False:
             sim = (q @ k.transpose(-2, -1)) * self.scale
             if attn_bias is not None:
                 sim = sim + attn_bias
@@ -112,10 +115,11 @@ class Attention(nn.Module):
             x = (attn @ v).transpose(1, 2).reshape(B, N1, C)
         else:
             input_args = [x.half().contiguous() for x in [q, k, v]]
-            x = F.scaled_dot_product_attention(*input_args).permute(0,2,1,3).reshape(B,N1,-1)  # type: ignore
+            x = F.scaled_dot_product_attention(*input_args).permute(0, 2, 1, 3).reshape(B, N1, -1)  # type: ignore
 
         # return self.to_out(x.float())
         return self.proj(x.float())
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_planes, planes, norm_fn="group", stride=1):
@@ -222,7 +226,7 @@ class BasicEncoder(nn.Module):
             self.conv2 = nn.Conv2d(128 + 96 + 64, output_dim, kernel_size=1)
         else:
             if Embed3D:
-                self.conv_fuse = nn.Conv2d(64+63, 
+                self.conv_fuse = nn.Conv2d(64 + 63,
                                            self.in_planes, kernel_size=3, padding=1)
             self.layer1 = self._make_layer(64, stride=1)
             self.layer2 = self._make_layer(96, stride=2)
@@ -245,7 +249,7 @@ class BasicEncoder(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out",
-                                                 nonlinearity="relu")
+                                        nonlinearity="relu")
             elif isinstance(m, (nn.BatchNorm2d, nn.InstanceNorm2d, nn.GroupNorm)):
                 if m.weight is not None:
                     nn.init.constant_(m.weight, 1)
@@ -332,108 +336,112 @@ class BasicEncoder(nn.Module):
             x = self.dropout(x)
         return x
 
+
 class VitEncoder(nn.Module):
     def __init__(self, input_dim=4, output_dim=128, stride=4):
         super(VitEncoder, self).__init__()
-        self.vit = vitEnc(img_size=512, 
-                     depth=6, num_heads=8, in_chans=input_dim,
-                     out_chans=output_dim,embed_dim=384).cuda()
+        self.vit = vitEnc(img_size=512,
+                          depth=6, num_heads=8, in_chans=input_dim,
+                          out_chans=output_dim, embed_dim=384).cuda()
         self.stride = stride
+
     def forward(self, x):
         T, C, H, W = x.shape
         x_resize = F.interpolate(x.view(-1, C, H, W), size=(512, 512),
-                                  mode='bilinear', align_corners=False)
+                                 mode='bilinear', align_corners=False)
         x_resize = self.vit(x_resize)
-        x = F.interpolate(x_resize, size=(H//self.stride, W//self.stride),
-                            mode='bilinear', align_corners=False)
+        x = F.interpolate(x_resize, size=(H // self.stride, W // self.stride),
+                          mode='bilinear', align_corners=False)
         return x
+
 
 class DPTEnc(nn.Module):
     def __init__(self, input_dim=3, output_dim=128, stride=2):
         super(DPTEnc, self).__init__()
         self.dpt = DPTEncoder()
         self.stride = stride
+
     def forward(self, x):
         T, C, H, W = x.shape
-        x = (x-0.5)/0.5
+        x = (x - 0.5) / 0.5
         x_resize = F.interpolate(x.view(-1, C, H, W), size=(384, 384),
-                                  mode='bilinear', align_corners=False)
+                                 mode='bilinear', align_corners=False)
         x_resize = self.dpt(x_resize)
-        x = F.interpolate(x_resize, size=(H//self.stride, W//self.stride),
-                            mode='bilinear', align_corners=False)
+        x = F.interpolate(x_resize, size=(H // self.stride, W // self.stride),
+                          mode='bilinear', align_corners=False)
         return x
+
 
 class DPT_DINOv2(nn.Module):
     def __init__(self, encoder='vits', features=64, out_channels=[48, 96, 192, 384],
-                  use_bn=True, use_clstoken=False, localhub=True, stride=2, enc_only=True):
+                 use_bn=True, use_clstoken=False, localhub=True, stride=2, enc_only=True):
         super(DPT_DINOv2, self).__init__()
         self.stride = stride
         self.enc_only = enc_only
         assert encoder in ['vits', 'vitb', 'vitl']
-        
+
         if localhub:
             self.pretrained = torch.hub.load('models/torchhub/facebookresearch_dinov2_main', 'dinov2_{:}14'.format(encoder), source='local', pretrained=False)
         else:
             self.pretrained = torch.hub.load('facebookresearch/dinov2', 'dinov2_{:}14'.format(encoder))
-        
+
         state_dict = torch.load("models/monoD/zoeDepth/ckpts/dinov2_vits14_pretrain.pth")
         self.pretrained.load_state_dict(state_dict, strict=True)
         self.pretrained.requires_grad_(False)
         dim = self.pretrained.blocks[0].attn.qkv.in_features
         if enc_only == True:
-            out_channels=[128, 128, 128, 128]
-        
+            out_channels = [128, 128, 128, 128]
+
         self.DPThead = DPTHeadEnc(1, dim, features, use_bn, out_channels=out_channels, use_clstoken=use_clstoken)
 
-        
     def forward(self, x):
-        mean_ = torch.tensor([0.485, 0.456, 0.406], 
+        mean_ = torch.tensor([0.485, 0.456, 0.406],
                              device=x.device).view(1, 3, 1, 1)
         std_ = torch.tensor([0.229, 0.224, 0.225],
                             device=x.device).view(1, 3, 1, 1)
-        x = (x+1)/2
-        x = (x - mean_)/std_
+        x = (x + 1) / 2
+        x = (x - mean_) / std_
         h, w = x.shape[-2:]
         h_re, w_re = 560, 560
         x_resize = F.interpolate(x, size=(h_re, w_re),
-                                  mode='bilinear', align_corners=False)
+                                 mode='bilinear', align_corners=False)
         with torch.no_grad():
             features = self.pretrained.get_intermediate_layers(x_resize, 4, return_class_token=True)
         patch_h, patch_w = h_re // 14, w_re // 14
         feat = self.DPThead(features, patch_h, patch_w, self.enc_only)
-        feat = F.interpolate(feat, size=(h//self.stride, w//self.stride), mode="bilinear", align_corners=True)
+        feat = F.interpolate(feat, size=(h // self.stride, w // self.stride), mode="bilinear", align_corners=True)
 
         return feat
 
 
 class VGG19(nn.Module):
-    def __init__(self, pretrained=False, amp = False, amp_dtype = torch.float16) -> None:
+    def __init__(self, pretrained=False, amp=False, amp_dtype=torch.float16) -> None:
         super().__init__()
         self.layers = nn.ModuleList(tvm.vgg19_bn(pretrained=pretrained).features[:40])
         self.amp = amp
         self.amp_dtype = amp_dtype
 
     def forward(self, x, **kwargs):
-        with torch.autocast("cuda", enabled=self.amp, dtype = self.amp_dtype):
+        with torch.autocast("cuda", enabled=self.amp, dtype=self.amp_dtype):
             feats = {}
             scale = 1
             for layer in self.layers:
                 if isinstance(layer, nn.MaxPool2d):
                     feats[scale] = x
-                    scale = scale*2
+                    scale = scale * 2
                 x = layer(x)
             return feats
 
+
 class CNNandDinov2(nn.Module):
-    def __init__(self, cnn_kwargs = None, amp = True, amp_dtype = torch.float16):
+    def __init__(self, cnn_kwargs=None, amp=True, amp_dtype=torch.float16):
         super().__init__()
         # in case the Internet connection is not stable, please load the DINOv2 locally
         self.dinov2_vitl14 = torch.hub.load('models/torchhub/facebookresearch_dinov2_main',
-                                          'dinov2_{:}14'.format("vitl"), source='local', pretrained=False)
-        
+                                            'dinov2_{:}14'.format("vitl"), source='local', pretrained=False)
+
         state_dict = torch.load("models/monoD/zoeDepth/ckpts/dinov2_vitl14_pretrain.pth")
         self.dinov2_vitl14.load_state_dict(state_dict, strict=True)
-
 
         cnn_kwargs = cnn_kwargs if cnn_kwargs is not None else {}
         self.cnn = VGG19(**cnn_kwargs)
@@ -441,14 +449,13 @@ class CNNandDinov2(nn.Module):
         self.amp_dtype = amp_dtype
         if self.amp:
             dinov2_vitl14 = dinov2_vitl14.to(self.amp_dtype)
-        self.dinov2_vitl14 = [dinov2_vitl14] # ugly hack to not show parameters to DDP
-    
-    
+        self.dinov2_vitl14 = [dinov2_vitl14]  # ugly hack to not show parameters to DDP
+
     def train(self, mode: bool = True):
         return self.cnn.train(mode)
-    
-    def forward(self, x, upsample = False):
-        B,C,H,W = x.shape
+
+    def forward(self, x, upsample=False):
+        B, C, H, W = x.shape
         feature_pyramid = self.cnn(x)
 
         if not upsample:
@@ -456,18 +463,19 @@ class CNNandDinov2(nn.Module):
                 if self.dinov2_vitl14[0].device != x.device:
                     self.dinov2_vitl14[0] = self.dinov2_vitl14[0].to(x.device).to(self.amp_dtype)
                 dinov2_features_16 = self.dinov2_vitl14[0].forward_features(x.to(self.amp_dtype))
-                features_16 = dinov2_features_16['x_norm_patchtokens'].permute(0,2,1).reshape(B,1024,H//14, W//14)
+                features_16 = dinov2_features_16['x_norm_patchtokens'].permute(0, 2, 1).reshape(B, 1024, H // 14, W // 14)
                 del dinov2_features_16
                 feature_pyramid[16] = features_16
         return feature_pyramid
 
+
 class Dinov2(nn.Module):
-    def __init__(self, amp = True, amp_dtype = torch.float16):
+    def __init__(self, amp=True, amp_dtype=torch.float16):
         super().__init__()
         # in case the Internet connection is not stable, please load the DINOv2 locally
         self.dinov2_vitl14 = torch.hub.load('models/torchhub/facebookresearch_dinov2_main',
-                                          'dinov2_{:}14'.format("vitl"), source='local', pretrained=False)
-        
+                                            'dinov2_{:}14'.format("vitl"), source='local', pretrained=False)
+
         state_dict = torch.load("models/monoD/zoeDepth/ckpts/dinov2_vitl14_pretrain.pth")
         self.dinov2_vitl14.load_state_dict(state_dict, strict=True)
 
@@ -475,25 +483,26 @@ class Dinov2(nn.Module):
         self.amp_dtype = amp_dtype
         if self.amp:
             self.dinov2_vitl14 = self.dinov2_vitl14.to(self.amp_dtype)
-    
-    def forward(self, x, upsample = False):
-        B,C,H,W = x.shape
-        mean_ = torch.tensor([0.485, 0.456, 0.406], 
+
+    def forward(self, x, upsample=False):
+        B, C, H, W = x.shape
+        mean_ = torch.tensor([0.485, 0.456, 0.406],
                              device=x.device).view(1, 3, 1, 1)
         std_ = torch.tensor([0.229, 0.224, 0.225],
                             device=x.device).view(1, 3, 1, 1)
-        x = (x+1)/2
-        x = (x - mean_)/std_
+        x = (x + 1) / 2
+        x = (x - mean_) / std_
         h_re, w_re = 560, 560
         x_resize = F.interpolate(x, size=(h_re, w_re),
-                                  mode='bilinear', align_corners=True)
+                                 mode='bilinear', align_corners=True)
         if not upsample:
             with torch.no_grad():
                 dinov2_features_16 = self.dinov2_vitl14.forward_features(x_resize.to(self.amp_dtype))
-                features_16 = dinov2_features_16['x_norm_patchtokens'].permute(0,2,1).reshape(B,1024,h_re//14, w_re//14)
+                features_16 = dinov2_features_16['x_norm_patchtokens'].permute(0, 2, 1).reshape(B, 1024, h_re // 14, w_re // 14)
                 del dinov2_features_16
-        features_16 = F.interpolate(features_16, size=(H//8, W//8), mode="bilinear", align_corners=True)
+        features_16 = F.interpolate(features_16, size=(H // 8, W // 8), mode="bilinear", align_corners=True)
         return features_16
+
 
 class AttnBlock(nn.Module):
     """
@@ -501,30 +510,32 @@ class AttnBlock(nn.Module):
     """
 
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0,
-                  flash=False, **block_kwargs):
+                 flash=False, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.flash=flash
+        self.flash = flash
 
         self.attn = Attention(
             hidden_size, num_heads=num_heads, qkv_bias=True, flash=flash,
             **block_kwargs
-        )        
-        
+        )
+
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
-        approx_gelu = lambda: nn.GELU(approximate="tanh")
+        def approx_gelu(): return nn.GELU(approximate="tanh")
         self.mlp = Mlp(
             in_features=hidden_size,
             hidden_features=mlp_hidden_dim,
             act_layer=approx_gelu,
             drop=0,
         )
+
     def forward(self, x):
         x = x + self.attn(self.norm1(x))
         x = x + self.mlp(self.norm2(x))
         return x
-    
+
+
 class CrossAttnBlock(nn.Module):
     def __init__(self, hidden_size, context_dim, num_heads=1, mlp_ratio=4.0,
                  flash=True, **block_kwargs):
@@ -533,14 +544,14 @@ class CrossAttnBlock(nn.Module):
         self.norm_context = nn.LayerNorm(hidden_size)
 
         self.cross_attn = Attention(
-            hidden_size, context_dim=context_dim, 
+            hidden_size, context_dim=context_dim,
             num_heads=num_heads, qkv_bias=True, **block_kwargs, flash=flash
 
         )
 
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
-        approx_gelu = lambda: nn.GELU(approximate="tanh")
+        def approx_gelu(): return nn.GELU(approximate="tanh")
         self.mlp = Mlp(
             in_features=hidden_size,
             hidden_features=mlp_hidden_dim,
@@ -586,7 +597,7 @@ class CorrBlock:
         self.depth_pyramid = []
         self.fmaps_pyramid.append(fmaps)
         if depths_dnG is not None:
-           self.depth_pyramid.append(depths_dnG) 
+            self.depth_pyramid.append(depths_dnG)
         for i in range(self.num_levels - 1):
             if depths_dnG is not None:
                 depths_dnG_ = depths_dnG.reshape(B * S, 1, H_prev, W_prev)
@@ -643,17 +654,17 @@ class CorrBlock:
             corrs = corrs.view(B, S, N, H, W)
             corrs = corrs / torch.sqrt(torch.tensor(C).float())
             self.corrs_pyramid.append(corrs)
-    
+
     def corr_sample(self, targets, coords, coords_dp=None):
         B, S, N, C = targets.shape
         r = self.radius
-        Dim_c = (2*r+1)**2
+        Dim_c = (2 * r + 1)**2
         assert C == self.C
         assert S == self.S
 
         out_pyramid = []
         out_pyramid_dp = []
-        for i in range(self.num_levels): 
+        for i in range(self.num_levels):
             dx = torch.linspace(-r, r, 2 * r + 1)
             dy = torch.linspace(-r, r, 2 * r + 1)
             delta = torch.stack(torch.meshgrid(dy, dx, indexing="ij"), axis=-1).to(
@@ -664,22 +675,22 @@ class CorrBlock:
             coords_lvl = centroid_lvl + delta_lvl
             fmaps = self.fmaps_pyramid[i]
             _, _, _, H, W = fmaps.shape
-            fmap2s = fmaps.view(B*S, C, H, W)
-            if len(self.depth_pyramid)>0:
+            fmap2s = fmaps.view(B * S, C, H, W)
+            if len(self.depth_pyramid) > 0:
                 depths_dnG_i = self.depth_pyramid[i]
-                depths_dnG_i = depths_dnG_i.view(B*S, 1, H, W)
-                dnG_sample = bilinear_sampler(depths_dnG_i, coords_lvl.view(B*S,1,N*Dim_c,2))
-                dp_corrs = (dnG_sample.view(B*S,N,-1) - coords_dp[0]).abs()/coords_dp[0]
+                depths_dnG_i = depths_dnG_i.view(B * S, 1, H, W)
+                dnG_sample = bilinear_sampler(depths_dnG_i, coords_lvl.view(B * S, 1, N * Dim_c, 2))
+                dp_corrs = (dnG_sample.view(B * S, N, -1) - coords_dp[0]).abs() / coords_dp[0]
                 out_pyramid_dp.append(dp_corrs)
-            fmap2s_sample = bilinear_sampler(fmap2s, coords_lvl.view(B*S,1,N*Dim_c,2))
-            fmap2s_sample = fmap2s_sample.permute(0, 3, 1, 2) # B*S, N*Dim_c, C, -1
-            corrs = torch.matmul(targets.reshape(B*S*N, 1, -1), fmap2s_sample.reshape(B*S*N, Dim_c, -1).permute(0, 2, 1))
+            fmap2s_sample = bilinear_sampler(fmap2s, coords_lvl.view(B * S, 1, N * Dim_c, 2))
+            fmap2s_sample = fmap2s_sample.permute(0, 3, 1, 2)  # B*S, N*Dim_c, C, -1
+            corrs = torch.matmul(targets.reshape(B * S * N, 1, -1), fmap2s_sample.reshape(B * S * N, Dim_c, -1).permute(0, 2, 1))
             corrs = corrs / torch.sqrt(torch.tensor(C).float())
             corrs = corrs.view(B, S, N, -1)
             out_pyramid.append(corrs)
 
         out = torch.cat(out_pyramid, dim=-1)  # B, S, N, LRR*2
-        if len(self.depth_pyramid)>0:
+        if len(self.depth_pyramid) > 0:
             out_dp = torch.cat(out_pyramid_dp, dim=-1)
             self.fcorrD = out_dp.contiguous().float()
         else:
@@ -727,8 +738,8 @@ class EUpdateFormer(nn.Module):
             "layer_names": ['self', 'cross'] * 3,
         }
         self.gnn = LocalFeatureTransformer(cross_attn_kwargs)
-        
-        # Attention Modules in the temporal dimension         
+
+        # Attention Modules in the temporal dimension
         self.time_blocks = nn.ModuleList(
             [
                 AttnBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, flash=flash) if add_time_attn else nn.Identity()
@@ -774,9 +785,9 @@ class EUpdateFormer(nn.Module):
         K = 0
         j = 0
         for i in range(len(self.time_blocks)):
-            tokens_time = rearrange(tokens, "b n t c -> (b n) t c", b=B, t=T, n=N+K)
+            tokens_time = rearrange(tokens, "b n t c -> (b n) t c", b=B, t=T, n=N + K)
             tokens_time = self.time_blocks[i](tokens_time)
-            tokens = rearrange(tokens_time, "(b n) t c -> b n t c ", b=B, t=T, n=N+K)
+            tokens = rearrange(tokens_time, "(b n) t c -> b n t c ", b=B, t=T, n=N + K)
             if self.add_space_attn and (
                 i % (len(self.time_blocks) // len(self.space_blocks)) == 0
             ):
@@ -786,10 +797,10 @@ class EUpdateFormer(nn.Module):
                 j += 1
 
         B, N, S, _ = tokens.shape
-        feat0, feat1 = self.gnn(tokens.view(B*N*S, -1)[None,...], se3_feature[None, ...])
+        feat0, feat1 = self.gnn(tokens.view(B * N * S, -1)[None, ...], se3_feature[None, ...])
 
-        so3 = F.tanh(self.se3_dec(feat0.view(B*N*S, -1)[None,...].view(B, N, S, -1))/100)
-        flow = self.flow_head(feat0.view(B,N,S,-1))
+        so3 = F.tanh(self.se3_dec(feat0.view(B * N * S, -1)[None, ...].view(B, N, S, -1)) / 100)
+        flow = self.flow_head(feat0.view(B, N, S, -1))
 
         return flow, _, _, feat1, so3
 
@@ -798,6 +809,7 @@ class FusionFormer(nn.Module):
     """ 
     Fuse the feature tracks info with the low rank motion tokens
     """
+
     def __init__(
         self,
         d_model=64,
@@ -806,7 +818,7 @@ class FusionFormer(nn.Module):
         mlp_ratio=4.0,
         flash=False,
         input_dim=35,
-        output_dim=384+3,
+        output_dim=384 + 3,
     ):
         super().__init__()
         self.flash = flash
@@ -829,7 +841,7 @@ class FusionFormer(nn.Module):
                 for _ in range(attn_iters)
             ]
         )
-    
+
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -848,7 +860,7 @@ class FusionFormer(nn.Module):
         Args:
             x: B, S, N, C
             Traj_whole: B T N C
-        
+
         """
         B, S, N, C = x.shape
         _, T, _, _ = token_cls.shape
@@ -859,114 +871,118 @@ class FusionFormer(nn.Module):
         for i in range(len(self.space_blocks)):
             x = rearrange(x, 'b s n c -> (b n) s c')
             x = self.time_blocks[i](x, token_cls)
-            x = self.space_blocks[i](x.permute(1,0,2))
+            x = self.space_blocks[i](x.permute(1, 0, 2))
             x = rearrange(x, '(b s) n c -> b s n c', b=B, s=S, n=N)
 
         x = self.out_proj(x)
         delta_xyz = x[..., :3]
         feat_traj = x[..., 3:]
-        return delta_xyz, feat_traj   
+        return delta_xyz, feat_traj
+
 
 class Lie():
     """
     Lie algebra for SO(3) and SE(3) operations in PyTorch
     """
 
-    def so3_to_SO3(self,w): # [...,3]
+    def so3_to_SO3(self, w):  # [...,3]
         wx = self.skew_symmetric(w)
-        theta = w.norm(dim=-1)[...,None,None]
-        I = torch.eye(3,device=w.device,dtype=torch.float32)
+        theta = w.norm(dim=-1)[..., None, None]
+        I = torch.eye(3, device=w.device, dtype=torch.float32)
         A = self.taylor_A(theta)
         B = self.taylor_B(theta)
-        R = I+A*wx+B*wx@wx
+        R = I + A * wx + B * wx @ wx
         return R
 
-    def SO3_to_so3(self,R,eps=1e-7): # [...,3,3]
-        trace = R[...,0,0]+R[...,1,1]+R[...,2,2]
-        theta = ((trace-1)/2).clamp(-1+eps,1-eps).acos_()[...,None,None]%np.pi # ln(R) will explode if theta==pi
-        lnR = 1/(2*self.taylor_A(theta)+1e-8)*(R-R.transpose(-2,-1)) # FIXME: wei-chiu finds it weird
-        w0,w1,w2 = lnR[...,2,1],lnR[...,0,2],lnR[...,1,0]
-        w = torch.stack([w0,w1,w2],dim=-1)
+    def SO3_to_so3(self, R, eps=1e-7):  # [...,3,3]
+        trace = R[..., 0, 0] + R[..., 1, 1] + R[..., 2, 2]
+        theta = ((trace - 1) / 2).clamp(-1 + eps, 1 - eps).acos_()[..., None, None] % np.pi  # ln(R) will explode if theta==pi
+        lnR = 1 / (2 * self.taylor_A(theta) + 1e-8) * (R - R.transpose(-2, -1))  # FIXME: wei-chiu finds it weird
+        w0, w1, w2 = lnR[..., 2, 1], lnR[..., 0, 2], lnR[..., 1, 0]
+        w = torch.stack([w0, w1, w2], dim=-1)
         return w
 
-    def se3_to_SE3(self,wu): # [...,3]
-        w,u = wu.split([3,3],dim=-1)
+    def se3_to_SE3(self, wu):  # [...,3]
+        w, u = wu.split([3, 3], dim=-1)
         wx = self.skew_symmetric(w)
-        theta = w.norm(dim=-1)[...,None,None]
-        I = torch.eye(3,device=w.device,dtype=torch.float32)
+        theta = w.norm(dim=-1)[..., None, None]
+        I = torch.eye(3, device=w.device, dtype=torch.float32)
         A = self.taylor_A(theta)
         B = self.taylor_B(theta)
         C = self.taylor_C(theta)
-        R = I+A*wx+B*wx@wx
-        V = I+B*wx+C*wx@wx
-        Rt = torch.cat([R,(V@u[...,None])],dim=-1)
+        R = I + A * wx + B * wx @ wx
+        V = I + B * wx + C * wx @ wx
+        Rt = torch.cat([R, (V @ u[..., None])], dim=-1)
         return Rt
 
-    def SE3_to_se3(self,Rt,eps=1e-8): # [...,3,4]
-        R,t = Rt.split([3,1],dim=-1)
+    def SE3_to_se3(self, Rt, eps=1e-8):  # [...,3,4]
+        R, t = Rt.split([3, 1], dim=-1)
         w = self.SO3_to_so3(R)
         wx = self.skew_symmetric(w)
-        theta = w.norm(dim=-1)[...,None,None]
-        I = torch.eye(3,device=w.device,dtype=torch.float32)
+        theta = w.norm(dim=-1)[..., None, None]
+        I = torch.eye(3, device=w.device, dtype=torch.float32)
         A = self.taylor_A(theta)
         B = self.taylor_B(theta)
-        invV = I-0.5*wx+(1-A/(2*B))/(theta**2+eps)*wx@wx
-        u = (invV@t)[...,0]
-        wu = torch.cat([w,u],dim=-1)
-        return wu    
+        invV = I - 0.5 * wx + (1 - A / (2 * B)) / (theta**2 + eps) * wx @ wx
+        u = (invV @ t)[..., 0]
+        wu = torch.cat([w, u], dim=-1)
+        return wu
 
-    def skew_symmetric(self,w):
-        w0,w1,w2 = w.unbind(dim=-1)
+    def skew_symmetric(self, w):
+        w0, w1, w2 = w.unbind(dim=-1)
         O = torch.zeros_like(w0)
-        wx = torch.stack([torch.stack([O,-w2,w1],dim=-1),
-                          torch.stack([w2,O,-w0],dim=-1),
-                          torch.stack([-w1,w0,O],dim=-1)],dim=-2)
+        wx = torch.stack([torch.stack([O, -w2, w1], dim=-1),
+                          torch.stack([w2, O, -w0], dim=-1),
+                          torch.stack([-w1, w0, O], dim=-1)], dim=-2)
         return wx
 
-    def taylor_A(self,x,nth=10):
+    def taylor_A(self, x, nth=10):
         # Taylor expansion of sin(x)/x
         ans = torch.zeros_like(x)
         denom = 1.
-        for i in range(nth+1):
-            if i>0: denom *= (2*i)*(2*i+1)
-            ans = ans+(-1)**i*x**(2*i)/denom
+        for i in range(nth + 1):
+            if i > 0:
+                denom *= (2 * i) * (2 * i + 1)
+            ans = ans + (-1)**i * x**(2 * i) / denom
         return ans
-    def taylor_B(self,x,nth=10):
+
+    def taylor_B(self, x, nth=10):
         # Taylor expansion of (1-cos(x))/x**2
         ans = torch.zeros_like(x)
         denom = 1.
-        for i in range(nth+1):
-            denom *= (2*i+1)*(2*i+2)
-            ans = ans+(-1)**i*x**(2*i)/denom
+        for i in range(nth + 1):
+            denom *= (2 * i + 1) * (2 * i + 2)
+            ans = ans + (-1)**i * x**(2 * i) / denom
         return ans
-    def taylor_C(self,x,nth=10):
+
+    def taylor_C(self, x, nth=10):
         # Taylor expansion of (x-sin(x))/x**3
         ans = torch.zeros_like(x)
         denom = 1.
-        for i in range(nth+1):
-            denom *= (2*i+2)*(2*i+3)
-            ans = ans+(-1)**i*x**(2*i)/denom
+        for i in range(nth + 1):
+            denom *= (2 * i + 2) * (2 * i + 3)
+            ans = ans + (-1)**i * x**(2 * i) / denom
         return ans
-    
 
 
-def pix2cam(coords, 
+def pix2cam(coords,
             intr):
     """
     Args:
         coords: [B, T, N, 3]
         intr: [B, T, 3, 3]
     """
-    coords=coords.detach()
+    coords = coords.detach()
     B, S, N, _, = coords.shape
-    xy_src = coords.reshape(B*S*N, 3)
-    intr = intr[:, :, None, ...].repeat(1, 1, N, 1, 1).reshape(B*S*N, 3, 3)
+    xy_src = coords.reshape(B * S * N, 3)
+    intr = intr[:, :, None, ...].repeat(1, 1, N, 1, 1).reshape(B * S * N, 3, 3)
     xy_src = torch.cat([xy_src[..., :2], torch.ones_like(xy_src[..., :1])], dim=-1)
-    xyz_src = (torch.inverse(intr)@xy_src[...,None])[...,0]
+    xyz_src = (torch.inverse(intr) @ xy_src[..., None])[..., 0]
     dp_pred = coords[..., 2]
-    xyz_src_ = (xyz_src*(dp_pred.reshape(S*N, 1)))
+    xyz_src_ = (xyz_src * (dp_pred.reshape(S * N, 1)))
     xyz_src_ = xyz_src_.reshape(B, S, N, 3)
     return xyz_src_
+
 
 def cam2pix(coords,
             intr):
@@ -975,16 +991,17 @@ def cam2pix(coords,
         coords: [B, T, N, 3]
         intr: [B, T, 3, 3]
     """
-    coords=coords.detach()
+    coords = coords.detach()
     B, S, N, _, = coords.shape
-    xy_src = coords.reshape(B*S*N, 3).clone()
-    intr = intr[:, :, None, ...].repeat(1, 1, N, 1, 1).reshape(B*S*N, 3, 3)
-    xy_src = xy_src / (xy_src[..., 2:]+1e-5)
-    xyz_src = (intr@xy_src[...,None])[...,0]
+    xy_src = coords.reshape(B * S * N, 3).clone()
+    intr = intr[:, :, None, ...].repeat(1, 1, N, 1, 1).reshape(B * S * N, 3, 3)
+    xy_src = xy_src / (xy_src[..., 2:] + 1e-5)
+    xyz_src = (intr @ xy_src[..., None])[..., 0]
     dp_pred = coords[..., 2]
-    xyz_src[...,2] *= dp_pred.reshape(S*N) 
+    xyz_src[..., 2] *= dp_pred.reshape(S * N)
     xyz_src = xyz_src.reshape(B, S, N, 3)
     return xyz_src
+
 
 def edgeMat(traj3d):
     """ 
@@ -994,6 +1011,6 @@ def edgeMat(traj3d):
     B, T, N, _ = traj3d.shape
     traj3d = traj3d
     traj3d = traj3d.view(B, T, N, 3)
-    traj3d = traj3d[..., None, :] - traj3d[..., None, :, :] # B, T, N, N, 3
-    edgeMat = traj3d.norm(dim=-1)  # B, T, N, N 
+    traj3d = traj3d[..., None, :] - traj3d[..., None, :, :]  # B, T, N, N, 3
+    edgeMat = traj3d.norm(dim=-1)  # B, T, N, N
     return edgeMat

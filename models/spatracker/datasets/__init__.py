@@ -6,22 +6,24 @@
 import os
 import random
 import numpy as np
-import torch 
+import torch
 from torch.utils.data import DataLoader
-from models.spatracker.datasets.utils import (
+from third_party.spatial_tracker.models.spatracker.datasets.utils import (
     collate_fn, dataclass_to_cuda_, collate_fn_train
 )
-from models.spatracker.datasets.tap_vid_datasets import TapVidDataset
-from models.spatracker.datasets.badja_dataset import BadjaDataset
-from models.spatracker.datasets.fast_capture_dataset import FastCaptureDataset
-from models.spatracker.datasets import kubric_movif_dataset
-from models.spatracker.datasets import pointodysseydataset_3d
-from models.spatracker.datasets import drivetrack_dataset
+from third_party.spatial_tracker.models.spatracker.datasets.tap_vid_datasets import TapVidDataset
+from third_party.spatial_tracker.models.spatracker.datasets.badja_dataset import BadjaDataset
+from third_party.spatial_tracker.models.spatracker.datasets.fast_capture_dataset import FastCaptureDataset
+from third_party.spatial_tracker.models.spatracker.datasets import kubric_movif_dataset
+from third_party.spatial_tracker.models.spatracker.datasets import pointodysseydataset_3d
+from third_party.spatial_tracker.models.spatracker.datasets import drivetrack_dataset
+
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2 ** 32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
+
 
 def EvalDatasets(args):
     """
@@ -61,10 +63,10 @@ def EvalDatasets(args):
         eval_dataloaders.append(("fastcapture", eval_dataloader_fastcapture))
 
     if "tapvid_davis_first" in args.eval_datasets:
-        data_root = os.path.join(args.dataset_root, 
+        data_root = os.path.join(args.dataset_root,
                                  "tapvid_davis/tapvid_davis.pkl")
         eval_dataset = TapVidDataset(dataset_type="davis",
-                                    data_root=data_root)
+                                     data_root=data_root)
         eval_dataloader_tapvid_davis = torch.utils.data.DataLoader(
             eval_dataset,
             batch_size=1,
@@ -72,15 +74,15 @@ def EvalDatasets(args):
             num_workers=1,
             collate_fn=collate_fn,
         )
-        eval_dataloaders.append(("tapvid_davis", eval_dataloader_tapvid_davis)) 
+        eval_dataloaders.append(("tapvid_davis", eval_dataloader_tapvid_davis))
 
     if 'kubriv' in args.eval_datasets:
         data_root = os.path.join(args.dataset_root, "kubric_eval")
         pass
 
-    return eval_dataloaders   
+    return eval_dataloaders
 
-    
+
 def GetTrainLoader(args, generator=None):
     if 'drivetrack' in args.dataset_root:
         train_dataset = drivetrack_dataset.DriveTrackDataset(

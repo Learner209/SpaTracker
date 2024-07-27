@@ -8,11 +8,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 # from torch_scatter import scatter_mean, scatter_max
-from models.spatracker.models.core.spatracker.unet import UNet
-from models.spatracker.models.core.model_utils import (
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.unet import UNet
+from third_party.spatial_tracker.models.spatracker.models.core.model_utils import (
     vis_PCA
 )
 from einops import rearrange
+
 
 def compute_iou(occ1, occ2):
     ''' Computes the Intersection over Union (IoU) value for two sets of
@@ -67,7 +68,7 @@ def chamfer_distance_naive(points1, points2):
         points1 (numpy array): first point set
         points2 (numpy array): second point set    
     '''
-    assert(points1.size() == points2.size())
+    assert (points1.size() == points2.size())
     batch_size, T, _ = points1.size()
 
     points1 = points1.view(batch_size, T, 1, 3)
@@ -181,9 +182,9 @@ def transform_points(points, transform):
         points (tensor): points tensor
         transform (tensor): transformation matrices
     '''
-    assert(points.size(2) == 3)
-    assert(transform.size(1) == 3)
-    assert(points.size(0) == transform.size(0))
+    assert (points.size(2) == 3)
+    assert (transform.size(1) == 3)
+    assert (points.size(0) == transform.size(0))
 
     if transform.size(2) == 4:
         R = transform[:, :, :3]
@@ -206,6 +207,7 @@ def b_inv(b_mat):
     eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
     b_inv, _ = torch.gesv(eye, b_mat)
     return b_inv
+
 
 def project_to_camera(points, transform):
     ''' Projects points to the camera plane.
@@ -239,8 +241,9 @@ def fix_Rt_camera(Rt, loc, scale):
 
     Rt_new = torch.cat([R_new, t_new], dim=2)
 
-    assert(Rt_new.size() == (batch_size, 3, 4))
+    assert (Rt_new.size() == (batch_size, 3, 4))
     return Rt_new
+
 
 def normalize_coordinate(p, padding=0.1, plane='xz'):
     ''' Normalize coordinate to [0, 1] for unit cube experiments
@@ -253,11 +256,11 @@ def normalize_coordinate(p, padding=0.1, plane='xz'):
     # breakpoint()
     if plane == 'xz':
         xy = p[:, :, [0, 2]]
-    elif plane =='xy':
+    elif plane == 'xy':
         xy = p[:, :, [0, 1]]
     else:
         xy = p[:, :, [1, 2]]
-        
+
     xy = torch.clamp(xy, min=1e-6, max=1. - 1e-6)
 
     # xy_new = xy / (1 + padding + 10e-6) # (-0.5, 0.5)
@@ -271,6 +274,7 @@ def normalize_coordinate(p, padding=0.1, plane='xz'):
     # xy_new = (xy + 1.) / 2.
     return xy
 
+
 def normalize_3d_coordinate(p, padding=0.1):
     ''' Normalize coordinate to [0, 1] for unit cube experiments.
         Corresponds to our 3D model
@@ -279,15 +283,16 @@ def normalize_3d_coordinate(p, padding=0.1):
         p (tensor): point
         padding (float): conventional padding paramter of ONet for unit cube, so [-0.5, 0.5] -> [-0.55, 0.55]
     '''
-    
-    p_nor = p / (1 + padding + 10e-4) # (-0.5, 0.5)
-    p_nor = p_nor + 0.5 # range (0, 1)
+
+    p_nor = p / (1 + padding + 10e-4)  # (-0.5, 0.5)
+    p_nor = p_nor + 0.5  # range (0, 1)
     # f there are outliers out of the range
     if p_nor.max() >= 1:
         p_nor[p_nor >= 1] = 1 - 10e-4
     if p_nor.min() < 0:
         p_nor[p_nor < 0] = 0.0
     return p_nor
+
 
 def normalize_coord(p, vol_range, plane='xz'):
     ''' Normalize coordinate to [0, 1] for sliding-window experiments
@@ -300,16 +305,17 @@ def normalize_coord(p, vol_range, plane='xz'):
     p[:, 0] = (p[:, 0] - vol_range[0][0]) / (vol_range[1][0] - vol_range[0][0])
     p[:, 1] = (p[:, 1] - vol_range[0][1]) / (vol_range[1][1] - vol_range[0][1])
     p[:, 2] = (p[:, 2] - vol_range[0][2]) / (vol_range[1][2] - vol_range[0][2])
-    
+
     if plane == 'xz':
         x = p[:, [0, 2]]
-    elif plane =='xy':
+    elif plane == 'xy':
         x = p[:, [0, 1]]
-    elif plane =='yz':
+    elif plane == 'yz':
         x = p[:, [1, 2]]
     else:
-        x = p    
+        x = p
     return x
+
 
 def coordinate2index(x, reso, coord_type='2d'):
     ''' Normalize coordinate to [0, 1] for unit cube experiments.
@@ -321,12 +327,13 @@ def coordinate2index(x, reso, coord_type='2d'):
         coord_type (str): coordinate type
     '''
     x = (x * reso).long()
-    if coord_type == '2d': # plane
+    if coord_type == '2d':  # plane
         index = x[:, :, 0] + reso * x[:, :, 1]
-    elif coord_type == '3d': # grid
+    elif coord_type == '3d':  # grid
         index = x[:, :, 0] + reso * (x[:, :, 1] + reso * x[:, :, 2])
     index = index[:, None, :]
     return index
+
 
 def coord2index(p, vol_range, reso=None, plane='xz'):
     ''' Normalize coordinate to [0, 1] for sliding-window experiments.
@@ -340,10 +347,10 @@ def coord2index(p, vol_range, reso=None, plane='xz'):
     '''
     # normalize to [0, 1]
     x = normalize_coord(p, vol_range, plane=plane)
-    
+
     if isinstance(x, np.ndarray):
         x = np.floor(x * reso).astype(int)
-    else: #* pytorch tensor
+    else:  # * pytorch tensor
         x = (x * reso).long()
 
     if x.shape[1] == 2:
@@ -352,8 +359,9 @@ def coord2index(p, vol_range, reso=None, plane='xz'):
     elif x.shape[1] == 3:
         index = x[:, 0] + reso * (x[:, 1] + reso * x[:, 2])
         index[index > reso**3] = reso**3
-    
+
     return index[None]
+
 
 def update_reso(reso, depth):
     ''' Update the defined resolution so that UNet can process.
@@ -363,12 +371,13 @@ def update_reso(reso, depth):
         depth (int): U-Net number of layers
     '''
     base = 2**(int(depth) - 1)
-    if ~(reso / base).is_integer(): # when this is not integer, U-Net dimension error
+    if ~(reso / base).is_integer():  # when this is not integer, U-Net dimension error
         for i in range(base):
             if ((reso + i) / base).is_integer():
                 reso = reso + i
-                break    
+                break
     return reso
+
 
 def decide_total_volume_range(query_vol_metric, recep_field, unit_size, unet_depth):
     ''' Update the defined resolution so that UNet can process.
@@ -380,19 +389,20 @@ def decide_total_volume_range(query_vol_metric, recep_field, unit_size, unet_dep
         unet_depth (int): U-Net number of layers
     '''
     reso = query_vol_metric / unit_size + recep_field - 1
-    reso = update_reso(int(reso), unet_depth) # make sure input reso can be processed by UNet
+    reso = update_reso(int(reso), unet_depth)  # make sure input reso can be processed by UNet
     input_vol_metric = reso * unit_size
     p_c = np.array([0.0, 0.0, 0.0]).astype(np.float32)
-    lb_input_vol, ub_input_vol = p_c - input_vol_metric/2, p_c + input_vol_metric/2
-    lb_query_vol, ub_query_vol = p_c - query_vol_metric/2, p_c + query_vol_metric/2
+    lb_input_vol, ub_input_vol = p_c - input_vol_metric / 2, p_c + input_vol_metric / 2
+    lb_query_vol, ub_query_vol = p_c - query_vol_metric / 2, p_c + query_vol_metric / 2
     input_vol = [lb_input_vol, ub_input_vol]
     query_vol = [lb_query_vol, ub_query_vol]
 
     # handle the case when resolution is too large
     if reso > 10000:
         reso = 1
-    
+
     return input_vol, query_vol, reso
+
 
 def add_key(base, new, base_name, new_name, device=None):
     ''' Add new keys to the given input
@@ -412,6 +422,7 @@ def add_key(base, new, base_name, new_name, device=None):
                 new_name: new}
     return base
 
+
 class map2local(object):
     ''' Add new keys to the given input
 
@@ -419,16 +430,18 @@ class map2local(object):
         s (float): the defined voxel size
         pos_encoding (str): method for the positional encoding, linear|sin_cos
     '''
+
     def __init__(self, s, pos_encoding='linear'):
         super().__init__()
         self.s = s
         self.pe = positional_encoding(basis_function=pos_encoding)
 
     def __call__(self, p):
-        p = torch.remainder(p, self.s) / self.s # always possitive
+        p = torch.remainder(p, self.s) / self.s  # always possitive
         # p = torch.fmod(p, self.s) / self.s # same sign as input p!
         p = self.pe(p)
         return p
+
 
 class positional_encoding(object):
     ''' Positional Encoding (presented in NeRF)
@@ -436,18 +449,19 @@ class positional_encoding(object):
     Args:
         basis_function (str): basis function
     '''
+
     def __init__(self, basis_function='sin_cos'):
         super().__init__()
         self.func = basis_function
 
         L = 10
-        freq_bands = 2.**(np.linspace(0, L-1, L))
+        freq_bands = 2.**(np.linspace(0, L - 1, L))
         self.freq_bands = freq_bands * math.pi
 
     def __call__(self, p):
         if self.func == 'sin_cos':
             out = []
-            p = 2.0 * p - 1.0 # chagne to the range [-1, 1]
+            p = 2.0 * p - 1.0  # chagne to the range [-1, 1]
             for freq in self.freq_bands:
                 out.append(torch.sin(freq * p))
                 out.append(torch.cos(freq * p))
@@ -455,6 +469,8 @@ class positional_encoding(object):
         return p
 
 # Resnet Blocks
+
+
 class ResnetBlockFC(nn.Module):
     ''' Fully connected ResNet Block class.
 
@@ -498,7 +514,6 @@ class ResnetBlockFC(nn.Module):
             x_s = x
 
         return x_s + dx
-    
 
 
 '''
@@ -508,18 +523,18 @@ class ResnetBlockFC(nn.Module):
 
 class LocalSoftSplat(nn.Module):
 
-    def __init__(self, ch=128, dim=3, hidden_dim=128, scatter_type='max', 
-                 unet=True, unet_kwargs=None, unet3d=False, unet3d_kwargs=None, 
+    def __init__(self, ch=128, dim=3, hidden_dim=128, scatter_type='max',
+                 unet=True, unet_kwargs=None, unet3d=False, unet3d_kwargs=None,
                  hw=None, grid_resolution=None, plane_type='xz', padding=0.1,
                  n_blocks=4, splat_func=None):
         super().__init__()
         c_dim = ch
-        
+
         self.c_dim = c_dim
 
-        self.fc_pos = nn.Linear(dim, 2*hidden_dim)
+        self.fc_pos = nn.Linear(dim, 2 * hidden_dim)
         self.blocks = nn.ModuleList([
-            ResnetBlockFC(2*hidden_dim, hidden_dim) for i in range(n_blocks)
+            ResnetBlockFC(2 * hidden_dim, hidden_dim) for i in range(n_blocks)
         ])
         self.fc_c = nn.Linear(hidden_dim, c_dim)
 
@@ -533,7 +548,7 @@ class LocalSoftSplat(nn.Module):
 
         # get splat func
         self.splat_func = splat_func
-    def forward(self, img_feat, 
+    def forward(self, img_feat,
                 Fxy2xz, Fxy2yz, Dz, gridxy=None):
         """
         Args:
@@ -543,11 +558,11 @@ class LocalSoftSplat(nn.Module):
         """
         B, T, _, H, W = img_feat.shape
         fea_reshp = rearrange(img_feat, 'b t c h w -> (b h w) t c',
-                               c=img_feat.shape[2], h=H, w=W)
+                              c=img_feat.shape[2], h=H, w=W)
 
         gridyz = gridxy + Fxy2yz
         gridxz = gridxy + Fxy2xz
-        # normalize 
+        # normalize
         gridyz[:, 0, ...] = (gridyz[:, 0, ...] / (H - 1) - 0.5) * 2
         gridyz[:, 1, ...] = (gridyz[:, 1, ...] / (Dz - 1) - 0.5) * 2
         gridxz[:, 0, ...] = (gridxz[:, 0, ...] / (W - 1) - 0.5) * 2
@@ -558,44 +573,43 @@ class LocalSoftSplat(nn.Module):
             for block in self.blocks[1:]:
                 # splat and fusion
                 net_plane = rearrange(net, '(b h w) t c -> (b t) c h w', b=B, h=H, w=W)
-                
+
                 net_planeYZ = self.splat_func(net_plane, Fxy2yz, None,
-                                    strMode="avg", tenoutH=Dz, tenoutW=H)
-                
+                                              strMode="avg", tenoutH=Dz, tenoutW=H)
+
                 net_planeXZ = self.splat_func(net_plane, Fxy2xz, None,
-                                    strMode="avg", tenoutH=Dz, tenoutW=W)
+                                              strMode="avg", tenoutH=Dz, tenoutW=W)
 
                 net_plane = net_plane + (
                     F.grid_sample(
-                    net_planeYZ, gridyz.permute(0,2,3,1), mode='bilinear', padding_mode='border') +
+                        net_planeYZ, gridyz.permute(0, 2, 3, 1), mode='bilinear', padding_mode='border') +
                     F.grid_sample(
-                    net_planeXZ, gridxz.permute(0,2,3,1), mode='bilinear', padding_mode='border')
-                                    )
-                
+                        net_planeXZ, gridxz.permute(0, 2, 3, 1), mode='bilinear', padding_mode='border')
+                )
+
                 pooled = rearrange(net_plane, 't c h w -> (h w) t c',
-                            c=net_plane.shape[1], h=H, w=W)
-                
+                                   c=net_plane.shape[1], h=H, w=W)
+
                 net = torch.cat([net, pooled], dim=2)
-                net = block(net) 
+                net = block(net)
 
             c = self.fc_c(net)
             net_plane = rearrange(c, '(b h w) t c -> (b t) c h w', b=B, h=H, w=W)
         else:
             net_plane = rearrange(img_feat, 'b t c h w -> (b t) c h w',
-                                c=img_feat.shape[2], h=H, w=W)
+                                  c=img_feat.shape[2], h=H, w=W)
         net_planeYZ = self.splat_func(net_plane, Fxy2yz, None,
-                                strMode="avg", tenoutH=Dz, tenoutW=H)
+                                      strMode="avg", tenoutH=Dz, tenoutW=H)
         net_planeXZ = self.splat_func(net_plane, Fxy2xz, None,
-                                strMode="avg", tenoutH=Dz, tenoutW=W)
-        
-        return net_plane[None], net_planeYZ[None], net_planeXZ[None]
+                                      strMode="avg", tenoutH=Dz, tenoutW=W)
 
+        return net_plane[None], net_planeYZ[None], net_planeXZ[None]
 
 
 class LocalPoolPointnet(nn.Module):
     ''' PointNet-based encoder network with ResNet blocks for each point.
         Number of input points are fixed.
-    
+
     Args:
         c_dim (int): dimension of latent code c
         dim (int): input points dimension
@@ -612,20 +626,20 @@ class LocalPoolPointnet(nn.Module):
         n_blocks (int): number of blocks ResNetBlockFC layers
     '''
 
-    def __init__(self, ch=128, dim=3, hidden_dim=128, scatter_type='max', 
-                 unet=True, unet_kwargs=None, unet3d=False, unet3d_kwargs=None, 
+    def __init__(self, ch=128, dim=3, hidden_dim=128, scatter_type='max',
+                 unet=True, unet_kwargs=None, unet3d=False, unet3d_kwargs=None,
                  hw=None, grid_resolution=None, plane_type='xz', padding=0.1, n_blocks=5):
         super().__init__()
         c_dim = ch
         unet3d = False
         plane_type = ['xy', 'xz', 'yz']
         plane_resolution = hw
-        
+
         self.c_dim = c_dim
 
-        self.fc_pos = nn.Linear(dim, 2*hidden_dim)
+        self.fc_pos = nn.Linear(dim, 2 * hidden_dim)
         self.blocks = nn.ModuleList([
-            ResnetBlockFC(2*hidden_dim, hidden_dim) for i in range(n_blocks)
+            ResnetBlockFC(2 * hidden_dim, hidden_dim) for i in range(n_blocks)
         ])
         self.fc_c = nn.Linear(hidden_dim, c_dim)
 
@@ -657,14 +671,14 @@ class LocalPoolPointnet(nn.Module):
 
     def generate_plane_features(self, p, c, plane='xz'):
         # acquire indices of features in plane
-        xy = normalize_coordinate(p.clone(), plane=plane, padding=self.padding) # normalize to the range of (0, 1)
+        xy = normalize_coordinate(p.clone(), plane=plane, padding=self.padding)  # normalize to the range of (0, 1)
         index = coordinate2index(xy, self.reso_plane)
 
         # scatter plane features from points
         fea_plane = c.new_zeros(p.size(0), self.c_dim, self.reso_plane**2)
-        c = c.permute(0, 2, 1) # B x 512 x T
-        fea_plane = scatter_mean(c, index, out=fea_plane) # B x 512 x reso^2
-        fea_plane = fea_plane.reshape(p.size(0), self.c_dim, self.reso_plane, self.reso_plane) # sparce matrix (B x 512 x reso x reso)
+        c = c.permute(0, 2, 1)  # B x 512 x T
+        fea_plane = scatter_mean(c, index, out=fea_plane)  # B x 512 x reso^2
+        fea_plane = fea_plane.reshape(p.size(0), self.c_dim, self.reso_plane, self.reso_plane)  # sparce matrix (B x 512 x reso x reso)
 
         # process the plane features with UNet
         if self.unet is not None:
@@ -678,8 +692,8 @@ class LocalPoolPointnet(nn.Module):
         # scatter grid features from points
         fea_grid = c.new_zeros(p.size(0), self.c_dim, self.reso_grid**3)
         c = c.permute(0, 2, 1)
-        fea_grid = scatter_mean(c, index, out=fea_grid) # B x C x reso^3
-        fea_grid = fea_grid.reshape(p.size(0), self.c_dim, self.reso_grid, self.reso_grid, self.reso_grid) # sparce matrix (B x 512 x reso x reso)
+        fea_grid = scatter_mean(c, index, out=fea_grid)  # B x C x reso^3
+        fea_grid = fea_grid.reshape(p.size(0), self.c_dim, self.reso_grid, self.reso_grid, self.reso_grid)  # sparce matrix (B x 512 x reso x reso)
 
         if self.unet3d is not None:
             fea_grid = self.unet3d(fea_grid)
@@ -705,7 +719,6 @@ class LocalPoolPointnet(nn.Module):
             c_out = c_out + fea
         return c_out.permute(0, 2, 1)
 
-
     def forward(self, p_input, img_feats=None):
         """
         Args:
@@ -715,7 +728,7 @@ class LocalPoolPointnet(nn.Module):
         T, _, H, W = img_feats.size()
         p = rearrange(p_input, 't c h w -> (h w) t c', c=3, h=H, w=W)
         fea_reshp = rearrange(img_feats, 't c h w -> (h w) t c',
-                               c=img_feats.shape[1], h=H, w=W)
+                              c=img_feats.shape[1], h=H, w=W)
 
         # acquire the index for each point
         coord = {}
@@ -732,7 +745,7 @@ class LocalPoolPointnet(nn.Module):
         if 'grid' in self.plane_type:
             coord['grid'] = normalize_3d_coordinate(p.clone(), padding=self.padding)
             index['grid'] = coordinate2index(coord['grid'], self.reso_grid, coord_type='3d')
-        
+
         net = self.fc_pos(p) + fea_reshp
         net = self.blocks[0](net)
         for block in self.blocks[1:]:
@@ -756,11 +769,12 @@ class LocalPoolPointnet(nn.Module):
         ret = torch.stack([fea['xy'], fea['xz'], fea['yz']]).permute((1, 0, 2, 3, 4))
         return ret
 
+
 class PatchLocalPoolPointnet(nn.Module):
     ''' PointNet-based encoder network with ResNet blocks.
         First transform input points to local system based on the given voxel size.
         Support non-fixed number of point cloud, but need to precompute the index
-    
+
     Args:
         c_dim (int): dimension of latent code c
         dim (int): input points dimension
@@ -780,15 +794,15 @@ class PatchLocalPoolPointnet(nn.Module):
         unit_size (float): defined voxel unit size for local system
     '''
 
-    def __init__(self, c_dim=128, dim=3, hidden_dim=128, scatter_type='max', 
-                 unet=False, unet_kwargs=None, unet3d=False, unet3d_kwargs=None, 
-                 plane_resolution=None, grid_resolution=None, plane_type='xz', padding=0.1, n_blocks=5, 
+    def __init__(self, c_dim=128, dim=3, hidden_dim=128, scatter_type='max',
+                 unet=False, unet_kwargs=None, unet3d=False, unet3d_kwargs=None,
+                 plane_resolution=None, grid_resolution=None, plane_type='xz', padding=0.1, n_blocks=5,
                  local_coord=False, pos_encoding='linear', unit_size=0.1):
         super().__init__()
         self.c_dim = c_dim
 
         self.blocks = nn.ModuleList([
-            ResnetBlockFC(2*hidden_dim, hidden_dim) for i in range(n_blocks)
+            ResnetBlockFC(2 * hidden_dim, hidden_dim) for i in range(n_blocks)
         ])
         self.fc_c = nn.Linear(hidden_dim, c_dim)
 
@@ -821,23 +835,23 @@ class PatchLocalPoolPointnet(nn.Module):
             self.map2local = map2local(unit_size, pos_encoding=pos_encoding)
         else:
             self.map2local = None
-        
+
         if pos_encoding == 'sin_cos':
-            self.fc_pos = nn.Linear(60, 2*hidden_dim)
+            self.fc_pos = nn.Linear(60, 2 * hidden_dim)
         else:
-            self.fc_pos = nn.Linear(dim, 2*hidden_dim)
+            self.fc_pos = nn.Linear(dim, 2 * hidden_dim)
 
     def generate_plane_features(self, index, c):
-        c = c.permute(0, 2, 1) 
+        c = c.permute(0, 2, 1)
         # scatter plane features from points
         if index.max() < self.reso_plane**2:
             fea_plane = c.new_zeros(c.size(0), self.c_dim, self.reso_plane**2)
-            fea_plane = scatter_mean(c, index, out=fea_plane) # B x c_dim x reso^2
+            fea_plane = scatter_mean(c, index, out=fea_plane)  # B x c_dim x reso^2
         else:
-            fea_plane = scatter_mean(c, index) # B x c_dim x reso^2
-            if fea_plane.shape[-1] > self.reso_plane**2: # deal with outliers
+            fea_plane = scatter_mean(c, index)  # B x c_dim x reso^2
+            if fea_plane.shape[-1] > self.reso_plane**2:  # deal with outliers
                 fea_plane = fea_plane[:, :, :-1]
-        
+
         fea_plane = fea_plane.reshape(c.size(0), self.c_dim, self.reso_plane, self.reso_plane)
 
         # process the plane features with UNet
@@ -847,14 +861,14 @@ class PatchLocalPoolPointnet(nn.Module):
         return fea_plane
 
     def generate_grid_features(self, index, c):
-        # scatter grid features from points        
+        # scatter grid features from points
         c = c.permute(0, 2, 1)
         if index.max() < self.reso_grid**3:
             fea_grid = c.new_zeros(c.size(0), self.c_dim, self.reso_grid**3)
-            fea_grid = scatter_mean(c, index, out=fea_grid) # B x c_dim x reso^3
+            fea_grid = scatter_mean(c, index, out=fea_grid)  # B x c_dim x reso^3
         else:
-            fea_grid = scatter_mean(c, index) # B x c_dim x reso^3
-            if fea_grid.shape[-1] > self.reso_grid**3: # deal with outliers
+            fea_grid = scatter_mean(c, index)  # B x c_dim x reso^3
+            if fea_grid.shape[-1] > self.reso_grid**3:  # deal with outliers
                 fea_grid = fea_grid[:, :, :-1]
         fea_grid = fea_grid.reshape(c.size(0), self.c_dim, self.reso_grid, self.reso_grid, self.reso_grid)
 
@@ -881,11 +895,10 @@ class PatchLocalPoolPointnet(nn.Module):
             c_out += fea
         return c_out.permute(0, 2, 1)
 
-
     def forward(self, inputs):
         p = inputs['points']
         index = inputs['index']
-    
+
         batch_size, T, D = p.size()
 
         if self.map2local:

@@ -28,6 +28,7 @@ import numpy as np
 from torchvision.transforms import Normalize
 import importlib
 
+
 def denormalize(x):
     """Reverses the imagenet normalization applied to the input.
 
@@ -40,6 +41,7 @@ def denormalize(x):
     mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(x.device)
     std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(x.device)
     return x * std + mean
+
 
 def get_activation(name, bank):
     def hook(model, input, output):
@@ -171,6 +173,7 @@ class Resize(object):
     def __call__(self, x):
         width, height = self.get_size(*x.shape[-2:][::-1])
         return nn.functional.interpolate(x, (int(height), int(width)), mode='bilinear', align_corners=True)
+
 
 class PrepForMidas(object):
     def __init__(self, resize_mode="minimal", keep_aspect_ratio=True, img_size=384, do_resize=True):
@@ -338,7 +341,7 @@ class MidasCore(nn.Module):
             kwargs = MidasCore.parse_img_size(kwargs)
         img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
-        hubconf = importlib.import_module(f"models.monoD.zoeDepth.midas_c.hubconf")
+        hubconf = importlib.import_module(f"third_party.spatial_tracker.models.monoD.zoeDepth.midas_c.hubconf")
         midas = getattr(hubconf, midas_model_type)(pretrained=False)
         ckpt_path = "models/monoD/zoeDepth/ckpts/dpt_beit_large_384.pt"
         midas_ckpt = torch.load(ckpt_path, map_location=torch.device('cpu'))
@@ -372,7 +375,7 @@ class MidasCore(nn.Module):
 
 
 nchannels2models = {
-    tuple([256]*5): ["DPT_BEiT_L_384", "DPT_BEiT_L_512", "DPT_BEiT_B_384", "DPT_SwinV2_L_384", "DPT_SwinV2_B_384", "DPT_SwinV2_T_256", "DPT_Large", "DPT_Hybrid"],
+    tuple([256] * 5): ["DPT_BEiT_L_384", "DPT_BEiT_L_512", "DPT_BEiT_B_384", "DPT_SwinV2_L_384", "DPT_SwinV2_B_384", "DPT_SwinV2_T_256", "DPT_Large", "DPT_Hybrid"],
     (512, 256, 128, 64, 64): ["MiDaS_small"]
 }
 

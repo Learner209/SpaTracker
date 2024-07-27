@@ -25,9 +25,9 @@
 import json
 import os
 
-from models.monoD.zoeDepth.utils.easydict import EasyDict as edict
+from third_party.spatial_tracker.models.monoD.zoeDepth.utils.easydict import EasyDict as edict
 
-from models.monoD.zoeDepth.utils.arg_utils import infer_type
+from third_party.spatial_tracker.models.monoD.zoeDepth.utils.arg_utils import infer_type
 import pathlib
 import platform
 
@@ -230,7 +230,7 @@ DATASETS_CONFIG = {
 }
 
 ALL_INDOOR = ["nyu", "ibims", "sunrgbd", "diode_indoor", "hypersim_test"]
-ALL_OUTDOOR = ["kitti", "diml_outdoor", "diode_outdoor",  "vkitti2", "ddad"]
+ALL_OUTDOOR = ["kitti", "diml_outdoor", "diode_outdoor", "vkitti2", "ddad"]
 ALL_EVAL_DATASETS = ALL_INDOOR + ALL_OUTDOOR
 
 COMMON_TRAINING_CONFIG = {
@@ -358,7 +358,7 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
         model_name (str): name of the desired model.
         mode (str, optional): "train" or "infer". Defaults to 'train'.
         dataset (str, optional): If specified, the corresponding dataset configuration is loaded as well. Defaults to None.
-    
+
     Keyword Args: key-value pairs of arguments to overwrite the default config.
 
     The order of precedence for overwriting the config is (Higher precedence first):
@@ -370,7 +370,6 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     Returns:
         easydict: The config dictionary for the model.
     """
-
 
     check_choices("Model", model_name, ["zoedepth", "zoedepth_nk"])
     check_choices("Mode", mode, ["train", "infer", "eval"])
@@ -423,7 +422,6 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     if dataset is not None:
         config['dataset'] = dataset
         config = {**DATASETS_CONFIG[dataset], **config}
-        
 
     config['model'] = model_name
     typed_config = {k: infer_type(v) for k, v in config.items()}

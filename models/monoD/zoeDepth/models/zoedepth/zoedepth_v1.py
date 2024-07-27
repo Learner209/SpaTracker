@@ -26,23 +26,23 @@ import itertools
 
 import torch
 import torch.nn as nn
-from models.monoD.zoeDepth.models.depth_model import DepthModel
-from models.monoD.zoeDepth.models.base_models.midas import MidasCore
-from models.monoD.zoeDepth.models.layers.attractor import (
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.depth_model import DepthModel
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.base_models.midas import MidasCore
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.layers.attractor import (
     AttractorLayer, AttractorLayerUnnormed
 )
-from models.monoD.zoeDepth.models.layers.dist_layers import (
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.layers.dist_layers import (
     ConditionalLogBinomial
-    )
-from models.monoD.zoeDepth.models.layers.localbins_layers import (
+)
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.layers.localbins_layers import (
     Projector, SeedBinRegressor,
     SeedBinRegressorUnnormed
-    )
-from models.monoD.zoeDepth.models.model_io import load_state_from_resource
+)
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.model_io import load_state_from_resource
 
 
 class ZoeDepth(DepthModel):
-    def __init__(self, core,  n_bins=64, bin_centers_type="softplus", bin_embedding_dim=128, min_depth=1e-3, max_depth=10,
+    def __init__(self, core, n_bins=64, bin_centers_type="softplus", bin_embedding_dim=128, min_depth=1e-3, max_depth=10,
                  n_attractors=[16, 8, 4, 1], attractor_alpha=300, attractor_gamma=2, attractor_kind='sum', attractor_type='exp', min_temp=5, max_temp=50, train_midas=True,
                  midas_lr_factor=10, encoder_lr_factor=10, pos_enc_lr_factor=10, inverse_midas=False, **kwargs):
         """ZoeDepth model. This is the version of ZoeDepth that has a single metric head
@@ -134,7 +134,7 @@ class ZoeDepth(DepthModel):
             return_final_centers (bool, optional): Whether to return the final bin centers. Defaults to False.
             denorm (bool, optional): Whether to denormalize the input image. This reverses ImageNet normalization as midas normalization is different. Defaults to False.
             return_probs (bool, optional): Whether to return the output probability distribution. Defaults to False.
-        
+
         Returns:
             dict: Dictionary containing the following keys:
                 - rel_depth (torch.Tensor): Relative depth map of shape (B, H, W)

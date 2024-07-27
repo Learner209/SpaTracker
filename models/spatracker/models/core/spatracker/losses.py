@@ -6,11 +6,11 @@
 
 import torch
 import torch.nn.functional as F
-from models.spatracker.models.core.model_utils import reduce_masked_mean
-from models.spatracker.models.core.spatracker.blocks import (
-        pix2cam
+from third_party.spatial_tracker.models.spatracker.models.core.model_utils import reduce_masked_mean
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.blocks import (
+    pix2cam
 )
-from models.spatracker.models.core.model_utils import (
+from third_party.spatial_tracker.models.spatracker.models.core.model_utils import (
     bilinear_sample2d
 )
 
@@ -18,11 +18,11 @@ EPS = 1e-6
 import torchvision.transforms.functional as TF
 
 sigma = 3
-x_grid = torch.arange(-7,8,1)
-y_grid = torch.arange(-7,8,1)
+x_grid = torch.arange(-7, 8, 1)
+y_grid = torch.arange(-7, 8, 1)
 x_grid, y_grid = torch.meshgrid(x_grid, y_grid)
 gridxy = torch.stack([x_grid, y_grid], dim=-1).float()
-gs_kernel = torch.exp(-torch.sum(gridxy**2, dim=-1)/(2*sigma**2))
+gs_kernel = torch.exp(-torch.sum(gridxy**2, dim=-1) / (2 * sigma**2))
 
 
 def balanced_ce_loss(pred, gt, valid=None):
@@ -48,7 +48,8 @@ def balanced_ce_loss(pred, gt, valid=None):
         neg_loss = reduce_masked_mean(loss, neg * valid[j])
         balanced_loss = pos_loss + neg_loss
         total_balanced_loss += balanced_loss / float(N)
-    import ipdb; ipdb.set_trace()
+    import ipdb
+    ipdb.set_trace()
     return total_balanced_loss
 
 
@@ -67,7 +68,7 @@ def sequence_loss(flow_preds, flow_gt, vis, valids, gamma=0.8,
         n_predictions = len(flow_preds[j])
         if intr is not None:
             intr_i = intr[j]
-        flow_loss = 0.0  
+        flow_loss = 0.0
         for i in range(n_predictions):
             i_weight = gamma ** (n_predictions - i - 1)
             flow_pred = flow_preds[j][i][..., -N:, :D]
@@ -77,14 +78,14 @@ def sequence_loss(flow_preds, flow_gt, vis, valids, gamma=0.8,
             try:
                 i_loss = (flow_pred - flow_gt_j).abs()  # B, S, N, 3
             except:
-                import ipdb; ipdb.set_trace()
-            if D==3:
-                i_loss[...,2]*=30
+                import ipdb
+                ipdb.set_trace()
+            if D == 3:
+                i_loss[..., 2] *= 30
             i_loss = torch.mean(i_loss, dim=3)  # B, S, N
-            flow_loss += i_weight * (reduce_masked_mean(i_loss, valids[j])) 
-        
+            flow_loss += i_weight * (reduce_masked_mean(i_loss, valids[j]))
+
         flow_loss = flow_loss / n_predictions
         total_flow_loss += flow_loss / float(N)
-        
-    
+
     return total_flow_loss

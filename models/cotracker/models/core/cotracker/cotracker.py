@@ -8,14 +8,14 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from models.cotracker.models.core.cotracker.blocks import (
+from third_party.spatial_tracker.models.cotracker.models.core.cotracker.blocks import (
     BasicEncoder,
     CorrBlock,
     UpdateFormer,
 )
 
-from models.cotracker.models.core.model_utils import meshgrid2d, bilinear_sample2d, smart_cat
-from models.cotracker.models.core.embeddings import (
+from third_party.spatial_tracker.models.cotracker.models.core.model_utils import meshgrid2d, bilinear_sample2d, smart_cat
+from third_party.spatial_tracker.models.cotracker.models.core.embeddings import (
     get_2d_embedding,
     get_1d_sincos_pos_embed_from_grid,
     get_2d_sincos_pos_embed,
@@ -158,27 +158,28 @@ class CoTracker(nn.Module):
         )
         coord_predictions = []
 
-        debug=False
-        if debug==True:
-            from models.spatracker_hier.models.core.model_utils import vis_PCA
+        debug = False
+        if debug == True:
+            from third_party.spatial_tracker.models.spatracker_hier.models.core.model_utils import vis_PCA
             import cv2
             import matplotlib.pyplot as plt
             pcd_idx = 43
-            vis_PCA(fmaps[0,:1], "./xy.png")
-            vis_PCA(fmaps[0,-1:], "./xy_.png")
-            fxy_q = feat_init[0,0,pcd_idx:pcd_idx+1, :, None, None]
-            corr_map = (fxy_q*fmaps[0,-1:]).sum(dim=1)
+            vis_PCA(fmaps[0, :1], "./xy.png")
+            vis_PCA(fmaps[0, -1:], "./xy_.png")
+            fxy_q = feat_init[0, 0, pcd_idx:pcd_idx + 1, :, None, None]
+            corr_map = (fxy_q * fmaps[0, -1:]).sum(dim=1)
             argmax_idx = torch.argmax(corr_map.view(-1))
-            x_max, y_max = argmax_idx%corr_map.shape[-1], argmax_idx//corr_map.shape[-1]
-            coord_last = coords[0,-1,pcd_idx:pcd_idx+1]
+            x_max, y_max = argmax_idx % corr_map.shape[-1], argmax_idx // corr_map.shape[-1]
+            coord_last = coords[0, -1, pcd_idx:pcd_idx + 1]
             corr_map_vis = corr_map[0].detach().cpu().numpy()
             img_feat_new = cv2.imread("./xy_.png")
             cv2.circle(img_feat_new, (int(x_max), int(y_max)), 3, (0, 255, 0), -1)
             plt.imsave("./corr_map.png", corr_map_vis)
             img_feat = cv2.imread("./xy.png")
-            cv2.circle(img_feat, (int(coord_last[0,0]), int(coord_last[0,1])), 2, (0, 0, 255), -1)
+            cv2.circle(img_feat, (int(coord_last[0, 0]), int(coord_last[0, 1])), 2, (0, 0, 255), -1)
             cv2.imwrite("./xy_coord.png", img_feat)
-            import ipdb; ipdb.set_trace()
+            import ipdb
+            ipdb.set_trace()
 
         for __ in range(iters):
             coords = coords.detach()
@@ -284,7 +285,7 @@ class CoTracker(nn.Module):
         coord_predictions = []
         wind_inds = []
         while ind < T - self.S // 2:
-            rgbs_seq = rgbs[:, ind : ind + self.S]
+            rgbs_seq = rgbs[:, ind: ind + self.S]
 
             S = S_local = rgbs_seq.shape[1]
             if S < self.S:
@@ -299,17 +300,16 @@ class CoTracker(nn.Module):
                 fmaps_ = self.fnet(rgbs_)
             else:
                 fmaps_ = torch.cat(
-                    [fmaps_[self.S // 2 :], self.fnet(rgbs_[self.S // 2 :])], dim=0
+                    [fmaps_[self.S // 2:], self.fnet(rgbs_[self.S // 2:])], dim=0
                 )
             fmaps = fmaps_.reshape(
                 B, S, self.latent_dim, H // self.stride, W // self.stride
             )
 
-            #TODO: add the splatting gpu calculation
+            # TODO: add the splatting gpu calculation
             torch.cuda.synchronize()
             allocated = torch.cuda.memory_allocated()
             print(f"Allocated: {allocated/1024**3:.2f} GB after the encoding")
-
 
             curr_wind_points = torch.nonzero(first_positive_sorted_inds < ind + self.S)
             if curr_wind_points.shape[0] == 0:
@@ -317,21 +317,20 @@ class CoTracker(nn.Module):
                 continue
             wind_idx = curr_wind_points[-1] + 1
 
-
             if prev_wind_idx > 0:
-                new_coords = coords[-1][:, self.S // 2 :] / float(self.stride)
+                new_coords = coords[-1][:, self.S // 2:] / float(self.stride)
 
                 coords_init_[:, : self.S // 2, :prev_wind_idx] = new_coords
-                coords_init_[:, self.S // 2 :, :prev_wind_idx] = new_coords[
+                coords_init_[:, self.S // 2:, :prev_wind_idx] = new_coords[
                     :, -1
                 ].repeat(1, self.S // 2, 1, 1)
 
-                new_vis = vis[:, self.S // 2 :].unsqueeze(-1)
+                new_vis = vis[:, self.S // 2:].unsqueeze(-1)
                 vis_init_[:, : self.S // 2, :prev_wind_idx] = new_vis
-                vis_init_[:, self.S // 2 :, :prev_wind_idx] = new_vis[:, -1].repeat(
+                vis_init_[:, self.S // 2:, :prev_wind_idx] = new_vis[:, -1].repeat(
                     1, self.S // 2, 1, 1
                 )
-            
+
             if wind_idx - prev_wind_idx > 0:
                 fmaps_sample = fmaps[
                     :, first_positive_sorted_inds[prev_wind_idx:wind_idx] - ind
@@ -344,7 +343,7 @@ class CoTracker(nn.Module):
 
                 feat_init_ = feat_init_.unsqueeze(1).repeat(1, self.S, 1, 1)
                 feat_init = smart_cat(feat_init, feat_init_, dim=2)
-            #TODO: add the splatting gpu calculation
+            # TODO: add the splatting gpu calculation
             torch.cuda.synchronize()
             allocated = torch.cuda.memory_allocated()
             print(f"Allocated: {allocated/1024**3:.2f} GB after the bilinear")
@@ -363,21 +362,21 @@ class CoTracker(nn.Module):
             # fmap_vnorm0 = fmap_vnorm0.reshape(fmap_vnorm0.shape[0],
             #                                         -1).permute(1,0) # H*W C
             # fmap_vnorm1 = fmap_vnorm1.reshape(fmap_vnorm1.shape[0],
-            #                                         -1).permute(1,0)    
+            #                                         -1).permute(1,0)
             # fmap0_pca = pca.fit_transform(fmap_vnorm0.cpu().numpy())
             # fmap1_pca = pca.fit_transform(fmap_vnorm1.cpu().numpy())
             # pca0 = fmap0_pca.reshape(H_vis,W_vis,3)
             # pca1 = fmap1_pca.reshape(H_vis,W_vis,3)
-            # plt.imsave("fmap0_pca.png", 
+            # plt.imsave("fmap0_pca.png",
             #             (
             #                 (pca0-pca0.min())/
             #                 (pca0.max()-pca0.min())
             #                 ))
-            # plt.imsave("fmap1_pca.png", 
+            # plt.imsave("fmap1_pca.png",
             #             (
             #                 (pca1-pca1.min())/
             #                 (pca1.max()-pca1.min())
-            #                 ))    
+            #                 ))
             # import ipdb; ipdb.set_trace()
 
             coords, vis, __ = self.forward_iteration(
@@ -385,7 +384,7 @@ class CoTracker(nn.Module):
                 coords_init=coords_init_[:, :, :wind_idx],
                 feat_init=feat_init[:, :, :wind_idx],
                 vis_init=vis_init_[:, :, :wind_idx],
-                track_mask=track_mask_[:, ind : ind + self.S, :wind_idx],
+                track_mask=track_mask_[:, ind: ind + self.S, :wind_idx],
                 iters=iters,
             )
             if is_train:
@@ -393,8 +392,8 @@ class CoTracker(nn.Module):
                 coord_predictions.append([coord[:, :S_local] for coord in coords])
                 wind_inds.append(wind_idx)
 
-            traj_e[:, ind : ind + self.S, :wind_idx] = coords[-1][:, :S_local]
-            vis_e[:, ind : ind + self.S, :wind_idx] = vis[:, :S_local]
+            traj_e[:, ind: ind + self.S, :wind_idx] = coords[-1][:, :S_local]
+            vis_e[:, ind: ind + self.S, :wind_idx] = vis[:, :S_local]
 
             track_mask_[:, : ind + self.S, :wind_idx] = 0.0
             ind = ind + self.S // 2

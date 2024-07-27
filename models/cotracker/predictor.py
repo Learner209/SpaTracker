@@ -8,9 +8,9 @@ import torch
 import torch.nn.functional as F
 
 from tqdm import tqdm
-from models.cotracker.models.core.cotracker.cotracker import get_points_on_a_grid
-from models.cotracker.models.core.model_utils import smart_cat
-from models.cotracker.models.build_cotracker import (
+from third_party.spatial_tracker.models.cotracker.models.core.cotracker.cotracker import get_points_on_a_grid
+from third_party.spatial_tracker.models.cotracker.models.core.model_utils import smart_cat
+from third_party.spatial_tracker.models.cotracker.models.build_cotracker import (
     build_cotracker,
 )
 
@@ -146,7 +146,7 @@ class CoTrackerPredictor(torch.nn.Module):
                 video, queries, tracks, visibilities
             )
             if add_support_grid:
-                queries[:, -self.support_grid_size ** 2 :, 0] = T - 1
+                queries[:, -self.support_grid_size ** 2:, 0] = T - 1
         if add_support_grid:
             tracks = tracks[:, :, : -self.support_grid_size ** 2]
             visibilities = visibilities[:, :, : -self.support_grid_size ** 2]

@@ -6,7 +6,7 @@
 
 import torch
 
-from models.spatracker.models.core.spatracker.spatracker import SpaTracker
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.spatracker import SpaTracker
 
 
 def build_spatracker(
@@ -15,7 +15,6 @@ def build_spatracker(
 ):
     model_name = checkpoint.split("/")[-1].split(".")[0]
     return build_spatracker_from_cfg(checkpoint=checkpoint, seq_length=seq_length)
-
 
 
 # model used to produce the results in the paper
@@ -44,7 +43,7 @@ def _build_spatracker(
             state_dict = torch.load(f, map_location="cpu")
             if "model" in state_dict:
                 model_paras = spatracker.state_dict()
-                paras_dict = {k: v for k,v in state_dict["model"].items() if k in spatracker.state_dict()}
+                paras_dict = {k: v for k, v in state_dict["model"].items() if k in spatracker.state_dict()}
                 model_paras.update(paras_dict)
                 state_dict = model_paras
         spatracker.load_state_dict(state_dict)

@@ -1,4 +1,4 @@
-#python3.10 
+# python3.10
 
 """
     Monocular Depth Estimator
@@ -11,7 +11,8 @@
         - Depth-Anything: https://github.com/LiheYoung/Depth-Anything
 """
 
-import os, sys
+import os
+import sys
 import importlib
 import torch
 import torch.nn as nn
@@ -19,10 +20,11 @@ import numpy as np
 from PIL import Image
 
 # import zoedepth builder
-from models.monoD.zoeDepth.models.builder import build_model
-from models.monoD.zoeDepth.utils.config import get_config
-from models.monoD.depth_anything.build import DepthAnything
+from third_party.spatial_tracker.models.monoD.zoeDepth.models.builder import build_model
+from third_party.spatial_tracker.models.monoD.zoeDepth.utils.config import get_config
+from third_party.spatial_tracker.models.monoD.depth_anything.build import DepthAnything
 from easydict import EasyDict as edict
+
 
 class MonoDEst(nn.Module):
 
@@ -66,19 +68,19 @@ class MonoDEst(nn.Module):
         if self.mde_name == "depthAny":
             depth_map = self.model.infer(rgbs)
             metric_dp = self.metric3d.infer(rgbs[:20])
-            metric_dp_inv = 1/metric_dp
+            metric_dp_inv = 1 / metric_dp
             dp_0_rel = depth_map[:20]
-            scale,shift = np.polyfit(dp_0_rel.view(-1).cpu().numpy(),
-                             metric_dp_inv.view(-1).cpu().numpy(), 1)
-            depth_map = depth_map*scale + shift
-            depth_map = (1/depth_map).clamp(0.01, 65)
+            scale, shift = np.polyfit(dp_0_rel.view(-1).cpu().numpy(),
+                                      metric_dp_inv.view(-1).cpu().numpy(), 1)
+            depth_map = depth_map * scale + shift
+            depth_map = (1 / depth_map).clamp(0.01, 65)
         else:
             depth_map = self.model.infer(rgbs)
 
         return depth_map
-    
 
-def write_ply(points,colors,path_ply,mask=None):
+
+def write_ply(points, colors, path_ply, mask=None):
     if mask is not None:
         num = np.sum(mask)
     else:
@@ -95,24 +97,26 @@ def write_ply(points,colors,path_ply,mask=None):
         end_header
         '''.format(num)
     if mask is not None:
-        with open(path_ply+'_mask'+'.ply', 'w') as f:
+        with open(path_ply + '_mask' + '.ply', 'w') as f:
             f.write(ply_header)
             for i in range(points.shape[0]):
                 if mask.reshape(-1)[i]:
-                    f.write('{} {} {} {} {} {}\n'.format(points[i,0], points[i,1], points[i,2],
-                                                                    int(colors[i, 0]*255), int(colors[i, 1]*255), int(colors[i, 2]*255)))
+                    f.write('{} {} {} {} {} {}\n'.format(points[i, 0], points[i, 1], points[i, 2],
+                                                         int(colors[i, 0] * 255), int(colors[i, 1] * 255), int(colors[i, 2] * 255)))
     else:
-        with open(path_ply+'.ply', 'w') as f:
+        with open(path_ply + '.ply', 'w') as f:
             f.write(ply_header)
             for i in range(points.shape[0]):
-                f.write('{} {} {} {} {} {}\n'.format(points[i,0], points[i,1], points[i,2],
-                                                                    int(colors[i, 0]*255), int(colors[i, 1]*255), int(colors[i, 2]*255)))
+                f.write('{} {} {} {} {} {}\n'.format(points[i, 0], points[i, 1], points[i, 2],
+                                                     int(colors[i, 0] * 255), int(colors[i, 1] * 255), int(colors[i, 2] * 255)))
 
-#TODO: unit test
+
+# TODO: unit test
 if __name__ == "__main__":
     import cv2
     import matplotlib.pyplot as plt
     import imageio
+
     def pixel_to_focal(pixels_a, K_a):
         # project pixels_b to 3D points (x, y, z) in cam_a coordinates
         points_a_cam = np.linalg.inv(K_a) @ pixels_a
@@ -128,11 +132,11 @@ if __name__ == "__main__":
         u_a = np.flip(u_a, axis=1)
         v_a = np.flip(v_a, axis=0)
         pixels_a = np.stack([
-            u_a.flatten() + 0.5, 
-            v_a.flatten() + 0.5, 
+            u_a.flatten() + 0.5,
+            v_a.flatten() + 0.5,
             np.ones_like(u_a.flatten())
         ], axis=0)
-        
+
         return pixels_a
 
     def get_intrinsics(H, W):
@@ -160,36 +164,36 @@ if __name__ == "__main__":
     img_np = cv2.imread("/nas2/xyx/BADJA/BADJA/DAVIS/JPEGImages/Full-Resolution/car-roundabout/00000.jpg")
     img = torch.from_numpy(img_np).permute(2, 0, 1).unsqueeze(0).float().cuda()
     # load the RGB image
-    depth = model.infer(img/255).detach().cpu().numpy()
-    depth = (depth-depth.min())/(depth.max()-depth.min())
+    depth = model.infer(img / 255).detach().cpu().numpy()
+    depth = (depth - depth.min()) / (depth.max() - depth.min())
 
-    # depth from depth anything 
+    # depth from depth anything
     H, W, _ = img_np.shape
     K = get_intrinsics(H, W)
     factor = H // 1
-    pixels = get_pixel(H, W)/factor
+    pixels = get_pixel(H, W) / factor
     # focals = pixel_to_focal(pixels, K)
     # points = focal_to_camera(focals, depth)
 
     points = pixels.transpose(1, 0)
-    points[:,2]=depth.reshape(-1)
+    points[:, 2] = depth.reshape(-1)
     colors = img_np.reshape(-1, 3) / 255.0
     write_ply(points, colors, 'depthAny.ply')
 
     # depth from the gt depth
-    depth_gt = imageio.v2.imread(os.path.join(DATA_ROOT, "512x512_depth", SCENE_NUM, FRAME_NUM+".png"))/1000
+    depth_gt = imageio.v2.imread(os.path.join(DATA_ROOT, "512x512_depth", SCENE_NUM, FRAME_NUM + ".png")) / 1000
     # points = focal_to_camera(focals, depth_gt/1000)
-    min = depth_gt[depth_gt>0].min()
-    depth_gt_inv = 1/(depth_gt.clip(min, 65))
+    min = depth_gt[depth_gt > 0].min()
+    depth_gt_inv = 1 / (depth_gt.clip(min, 65))
     points = pixels.transpose(1, 0)
-    points[:,2]=depth_gt.reshape(-1)
+    points[:, 2] = depth_gt.reshape(-1)
     colors = img_np.reshape(-1, 3) / 255.0
     write_ply(points, colors, 'depthGT.py')
 
-    # depth of align 
-    scale, shift = np.polyfit(depth.reshape(-1),depth_gt_inv.reshape(-1), 1)
-    depth_align = depth*scale + shift
+    # depth of align
+    scale, shift = np.polyfit(depth.reshape(-1), depth_gt_inv.reshape(-1), 1)
+    depth_align = depth * scale + shift
     points = pixels.transpose(1, 0)
-    points[:,2]=1/depth_align.reshape(-1)
+    points[:, 2] = 1 / depth_align.reshape(-1)
     colors = img_np.reshape(-1, 3) / 255.0
     write_ply(points, colors, 'depthAlign.py')

@@ -9,12 +9,12 @@ import torch.nn.functional as F
 import time
 
 from tqdm import tqdm
-from models.spatracker.models.core.spatracker.spatracker import get_points_on_a_grid
-from models.spatracker.models.core.model_utils import smart_cat
-from models.spatracker.models.build_spatracker import (
+from third_party.spatial_tracker.models.spatracker.models.core.spatracker.spatracker import get_points_on_a_grid
+from third_party.spatial_tracker.models.spatracker.models.core.model_utils import smart_cat
+from third_party.spatial_tracker.models.spatracker.models.build_spatracker import (
     build_spatracker,
 )
-from models.spatracker.models.core.model_utils import (
+from third_party.spatial_tracker.models.spatracker.models.core.model_utils import (
     meshgrid2d, bilinear_sample2d, smart_cat
 )
 
@@ -37,7 +37,7 @@ class SpaTrackerPredictor(torch.nn.Module):
     def forward(
         self,
         video,  # (1, T, 3, H, W)
-        video_depth = None, # (T, 1, H, W)
+        video_depth=None,  # (T, 1, H, W)
         # input prompt types:
         # - None. Dense tracks are computed in this case. You can adjust *query_frame* to compute tracks starting from a specific frame.
         # *backward_tracking=True* will compute tracks in both directions.
@@ -74,7 +74,7 @@ class SpaTrackerPredictor(torch.nn.Module):
                 depth_predictor=depth_predictor,
                 wind_length=wind_length,
             )
-        
+
         return tracks, visibilities, T_Firsts
 
     def _compute_dense_tracks(
@@ -108,7 +108,6 @@ class SpaTrackerPredictor(torch.nn.Module):
             tracks = smart_cat(tracks, tracks_step, dim=2)
             visibilities = smart_cat(visibilities, visibilities_step, dim=2)
             T_Firsts = smart_cat(T_Firsts, T_First_step, dim=1)
-
 
         return tracks, visibilities, T_Firsts
 
@@ -183,50 +182,50 @@ class SpaTrackerPredictor(torch.nn.Module):
         ## ----------- estimate the video depth -----------##
         if video_depth is None:
             with torch.no_grad():
-                if video[0].shape[0]>30:
-                    vidDepths = [] 
-                    for i in range(video[0].shape[0]//30+1):
-                        if (i+1)*30 > video[0].shape[0]:
+                if video[0].shape[0] > 30:
+                    vidDepths = []
+                    for i in range(video[0].shape[0] // 30 + 1):
+                        if (i + 1) * 30 > video[0].shape[0]:
                             end_idx = video[0].shape[0]
                         else:
-                            end_idx = (i+1)*30
-                        if end_idx == i*30:
+                            end_idx = (i + 1) * 30
+                        if end_idx == i * 30:
                             break
-                        video_ = video[0][i*30:end_idx]
-                        vidDepths.append(depth_predictor.infer(video_/255))
+                        video_ = video[0][i * 30:end_idx]
+                        vidDepths.append(depth_predictor.infer(video_ / 255))
 
                     video_depth = torch.cat(vidDepths, dim=0)
 
                 else:
-                    video_depth = depth_predictor.infer(video[0]/255)
+                    video_depth = depth_predictor.infer(video[0] / 255)
         video_depth = F.interpolate(video_depth,
-                                     tuple(self.interp_shape), mode="nearest")
+                                    tuple(self.interp_shape), mode="nearest")
 
         depths = video_depth
-        rgbds = torch.cat([video, depths[None,...]], dim=2)
+        rgbds = torch.cat([video, depths[None, ...]], dim=2)
         # get the 3D queries
-        depth_interp=[]
+        depth_interp = []
         for i in range(queries.shape[1]):
-            depth_interp_i = bilinear_sample2d(video_depth[queries[:, i:i+1, 0].long()], 
-                                queries[:, i:i+1, 1], queries[:, i:i+1, 2])
+            depth_interp_i = bilinear_sample2d(video_depth[queries[:, i:i + 1, 0].long()],
+                                               queries[:, i:i + 1, 1], queries[:, i:i + 1, 2])
             depth_interp.append(depth_interp_i)
 
         depth_interp = torch.cat(depth_interp, dim=1)
-        queries = smart_cat(queries, depth_interp,dim=-1)
+        queries = smart_cat(queries, depth_interp, dim=-1)
 
-        #NOTE: free the memory of depth_predictor
+        # NOTE: free the memory of depth_predictor
         del depth_predictor
         torch.cuda.empty_cache()
         t0 = time.time()
         tracks, __, visibilities = self.model(rgbds=rgbds, queries=queries, iters=6, wind_S=wind_length)
-        print("Time taken for inference: ", time.time()-t0)
+        print("Time taken for inference: ", time.time() - t0)
 
         if backward_tracking:
             tracks, visibilities = self._compute_backward_tracks(
                 rgbds, queries, tracks, visibilities
             )
             if add_support_grid:
-                queries[:, -self.support_grid_size ** 2 :, 0] = T - 1
+                queries[:, -self.support_grid_size ** 2:, 0] = T - 1
         if add_support_grid:
             tracks = tracks[:, :, : -self.support_grid_size ** 2]
             visibilities = visibilities[:, :, : -self.support_grid_size ** 2]
@@ -246,7 +245,7 @@ class SpaTrackerPredictor(torch.nn.Module):
 
             # correct visibilities, the query points should be visible
             visibilities[i, queries_t, arange] = True
-            
+
         T_First = queries[..., :tracks.size(2), 0].to(torch.uint8)
         tracks[:, :, :, 0] *= W / float(self.interp_shape[1])
         tracks[:, :, :, 1] *= H / float(self.interp_shape[0])

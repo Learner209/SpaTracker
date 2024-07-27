@@ -1,4 +1,4 @@
-#python 3.10
+# python 3.10
 """
     Recover consistent scales and shifts from a set of relative depth input via 
     SpatialTracker
@@ -11,27 +11,29 @@
 """
 
 # import the necessary packages
-import os, sys
+import os
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
 from easydict import EasyDict as edict
 
 # import the tracker
-from models.spatracker_hier.models.build_spatracker import (
+from third_party.spatial_tracker.models.spatracker_hier.models.build_spatracker import (
     build_spatracker,
 )
-from models.cotracker.models.core.cotracker.cotracker import (
+from third_party.spatial_tracker.models.cotracker.models.core.cotracker.cotracker import (
     get_points_on_a_grid
 )
-from models.cotracker.utils.visualizer import (
+from third_party.spatial_tracker.models.cotracker.utils.visualizer import (
     Visualizer, read_video_from_path
 )
-from models.cotracker.models.core.model_utils import bilinear_sample2d
+from third_party.spatial_tracker.models.cotracker.models.core.model_utils import bilinear_sample2d
 
 
 # import the monocular depth model
 from mde import MonoDEst
+
 
 class Graph(nn.Module):
     def __init__(self, rel_dp):
@@ -44,9 +46,9 @@ class Graph(nn.Module):
             torch.ones(T, 2, 1, 1, requires_grad=True)
         )
         self.focal = nn.Parameter(
-            512*torch.ones(1, requires_grad=True)
+            512 * torch.ones(1, requires_grad=True)
         )
-        
+
         self.rel_dp = rel_dp
 
     def forward(self, rgbs, tracker, query2d):
@@ -54,15 +56,15 @@ class Graph(nn.Module):
         Args:
             rgbs: the input images B x T x 3 x H x W, torch.Tensor
         """
-        
+
         tracker = tracker.cuda().eval()
-        rgbds = torch.cat([rgbs, self.rel_dp], dim=2) 
+        rgbds = torch.cat([rgbs, self.rel_dp], dim=2)
         # the query points
         zeros_one = torch.zeros(query2d.shape[0], query2d.shape[1], 1).cuda()
         query2d_input = torch.cat([zeros_one, query2d], dim=-1)
-        # get the metric depth 
+        # get the metric depth
         metric_dp = (self.rel_dp * self.paras_scale_shift[None, :, :1, :, :]
-                                        + self.paras_scale_shift[None, :, 1:, :, :])
+                     + self.paras_scale_shift[None, :, 1:, :, :])
 
         depth_sample = bilinear_sample2d(
             metric_dp[0, :1], query2d[:, :, 0], query2d[:, :, 1]
@@ -74,15 +76,16 @@ class Graph(nn.Module):
         tracker.args.Embed3D = True
         with torch.no_grad():
             traj_e, _, vis_e, _ = tracker(rgbds, query3d_input,
-                                           iters=4, wind_S=12)
+                                          iters=4, wind_S=12)
         vis = torch.sigmoid(vis_e)
 
         depth_est = bilinear_sample2d(
-             metric_dp[0, ...], traj_e[0, :, :, 0], traj_e[0, :, :, 1]
-            )
-        ln = ((depth_est[:,0,:] - traj_e[0,:,:,2])*vis[0]).sum()
+            metric_dp[0, ...], traj_e[0, :, :, 0], traj_e[0, :, :, 1]
+        )
+        ln = ((depth_est[:, 0, :] - traj_e[0, :, :, 2]) * vis[0]).sum()
 
-        return ln 
+        return ln
+
 
 # config the shape of the input video and get the queried points
 VID_DIR = "./assets/butterfly.mp4"
@@ -91,28 +94,28 @@ grid_pts = get_points_on_a_grid(30, interp_shape)
 
 # config the depth estimator
 cfg = edict({
-        "mde_name": "depthAny"
-        # "mde_name": "zoedepth_nk"
-            })
+    "mde_name": "depthAny"
+    # "mde_name": "zoedepth_nk"
+})
 MonoDEst_O = MonoDEst(cfg)
 MonoDEst_M = MonoDEst_O.model
 MonoDEst_M.eval()
 
 # read video and estimate the relative depth
-rgbs = read_video_from_path(VID_DIR)//255
+rgbs = read_video_from_path(VID_DIR) // 255
 rgbs = torch.from_numpy(rgbs).cuda()[None].permute(0, 1, 4, 2, 3)
 
-rgbs = torch.nn.functional.interpolate(rgbs[0].float(), 
+rgbs = torch.nn.functional.interpolate(rgbs[0].float(),
                                        size=interp_shape, mode="bilinear")
 T, _, _, _ = rgbs.shape
 step_size = 50
 rel_dps = None
 with torch.no_grad():
     for i in range(0, T, step_size):
-        rel_dp = MonoDEst_O.infer(rgbs[i:i+step_size])
-        rel_dp = 1/rel_dp
-        rel_dp = torch.nn.functional.interpolate(rel_dp, 
-                                                size=interp_shape, mode="bilinear")
+        rel_dp = MonoDEst_O.infer(rgbs[i:i + step_size])
+        rel_dp = 1 / rel_dp
+        rel_dp = torch.nn.functional.interpolate(rel_dp,
+                                                 size=interp_shape, mode="bilinear")
 
         if i == 0:
             rel_dps = rel_dp
@@ -138,10 +141,3 @@ for i in range(optim_iters):
     loss.backward()
     optimizer.step()
     print(f"iter {i}, loss {loss.item()}")
-
-
-
-
-
-
-
